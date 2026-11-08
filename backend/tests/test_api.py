@@ -246,3 +246,27 @@ def test_advice_gives_one_plain_action(client, monkeypatch):
     assert client.post("/api/advice/BTCUSDT").json()["action"] == "wait"
     assert client.post("/api/advice/DOGEUSDT").status_code == 400
     client.post("/api/account/reset")
+
+
+def test_learning_api(client):
+    s = client.get("/api/learn").json()
+    assert s["level"] == 1 and len(s["levels"]) == 6 and s["levels"][1]["status"] == "locked"
+    lesson = client.get("/api/learn/lessons/l1-what-is-trading").json()
+    assert lesson["cards"] and "answer" not in lesson["quiz"][0]
+    r = client.post("/api/learn/lessons/l1-what-is-trading/answer", json={"question": 0, "choice": 0}).json()
+    assert r["correct"] is True and r["why"]
+    assert client.post("/api/learn/lessons/l2-stops/answer", json={"question": 0, "choice": 1}).status_code == 400
+    assert client.post("/api/learn/events", json={"name": "chart", "value": "BTCUSDT"}).status_code == 200
+    assert client.post("/api/learn/events", json={"name": "win"}).status_code == 400
+    assert len(client.get("/api/learn/glossary").json()) > 40
+
+
+def test_explain_trade_api(client):
+    buy = client.post("/api/orders", json={"symbol": "ETHUSDT", "side": "buy"}).json()
+    sell = client.post("/api/positions/ETHUSDT/close").json()
+    e = client.post(f"/api/trades/{sell['id']}/explain").json()
+    assert e["trade_id"] == sell["id"] and e["headline"].startswith("You ") and e["source"] == "rules"
+    assert client.post(f"/api/trades/{buy['id']}/explain").json()["headline"].startswith("You bought")
+    assert client.post("/api/trades/999999/explain").status_code == 400
+    counts = client.get("/api/learn").json()["levels"][0]["challenges"]
+    assert counts[0]["done"] and counts[1]["done"]

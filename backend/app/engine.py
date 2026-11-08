@@ -14,6 +14,7 @@ from app.broker import PaperBroker, RiskError, RiskLimits
 from app.config import Settings, settings as default_settings
 from app.db import Database
 from app.hub import Hub
+from app.learn import Learning, rule_explanation, trade_facts
 from app.market import MarketData, fetch_history, fetch_klines
 from app.strategies import STRATEGIES, Strategy, make_strategy
 
@@ -40,6 +41,7 @@ class TradingEngine:
         self.interval: str = self.settings.interval
         self.db = Database(self.settings.db_path)
         self.hub = Hub()
+        self.learn = Learning(self.db)
         self.market = MarketData(
             self.symbols, self.interval, self.settings.history_bars, self.on_update, self.on_close
         )
@@ -264,6 +266,7 @@ class TradingEngine:
              fill.get("pnl"), fill.get("reason"), fill.get("strategy")),
         )
         out = {**fill, "id": cur.lastrowid}
+        self.learn.record_fill(fill)
         self.persist_broker()
         await self.hub.broadcast("trade", out)
         await self.broadcast_account(force=True)
@@ -392,6 +395,10 @@ class TradingEngine:
         self.db.set_kv("engine", self.config)
         await self.hub.broadcast("engine", self.config)
         msgs = []
+        if new["auto_trading"] and not old["auto_trading"]:
+            self.learn.record("auto_on")
+        if new["ai_filter"] and not old["ai_filter"]:
+            self.learn.record("ai_filter_on")
         if new["auto_trading"] != old["auto_trading"]:
             msgs.append(f"auto-trading {'ON' if new['auto_trading'] else 'OFF'}")
         if new["ai_filter"] != old["ai_filter"]:
@@ -407,6 +414,7 @@ class TradingEngine:
             limits = self.broker.limits.update(partial)
             self.broker.limits = limits
             self.db.set_kv("risk", limits.to_dict())
+            self.learn.record("risk")
             self.persist_broker()
         await self.hub.broadcast("risk", limits.to_dict())
         await self.log("info", "Risk limits updated: " + ", ".join(f"{k}={v}" for k, v in partial.items()))
@@ -437,6 +445,7 @@ class TradingEngine:
         async with self.lock:
             position = self.broker.set_brackets(symbol, stop_loss, take_profit)
             self.persist_broker()
+            self.learn.record("brackets")
         await self.broadcast_account(force=True)
         await self.log("info", f"Brackets {symbol}: SL={stop_loss} TP={take_profit}")
         return position
@@ -497,6 +506,31 @@ class TradingEngine:
                        f"conf {float(analysis.get('confidence') or 0):.2f} via {analysis.get('source')} "
                        f"({analysis.get('latency_ms')} ms)")
         return analysis
+
+    async def explain_trade(self, trade_id: int) -> dict:
+        """Beginner explanation of one trade: rule-based numbers, wording improved by the AI when available."""
+        trade = self.db.one("SELECT * FROM trades WHERE id = ?", (int(trade_id),))
+        if not trade:
+            raise KeyError(f"Trade {trade_id} not found")
+        cached = self.db.get_kv(f"explain:{trade['id']}")
+        if isinstance(cached, dict):
+            self.learn.record("explain")
+            return cached
+        entry = None
+        if trade["side"] == "sell":
+            entry = self.db.one("SELECT * FROM trades WHERE symbol = ? AND side = 'buy' AND id < ? ORDER BY id DESC LIMIT 1",
+                                (trade["symbol"], trade["id"]))
+        facts = trade_facts(trade, entry, coin_name(trade["symbol"]))
+        base = rule_explanation(facts)
+        result = {**base, "trade_id": trade["id"], "source": "rules"}
+        if self.ai_health.get("available"):
+            improved = await self.ai.explain_trade(facts, base, self.learn.level())
+            if improved:
+                result.update(improved)
+                result["source"] = f"ollama:{self.ai.model}"
+        self.db.set_kv(f"explain:{trade['id']}", result)
+        self.learn.record("explain")
+        return result
 
     # ------------------------------------------------------------------ history queries
     def trades(self, limit: int = 200) -> list[dict]:

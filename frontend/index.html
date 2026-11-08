@@ -12,8 +12,9 @@
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
   <script type="module" src="app.js"></script>
   <script type="module" src="simple.js"></script>
+  <script type="module" src="learn.js"></script>
 </head>
-<body class="simple-mode">
+<body class="simple-mode view-learn">
   <header class="topbar">
     <div class="brand">
       <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5-6 4 4 8-10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -21,7 +22,13 @@
       <span class="badge badge-paper">PAPER</span>
     </div>
 
-    <button type="button" class="btn btn-sm view-toggle" id="view-toggle">Advanced</button>
+    <nav class="main-nav" id="main-nav" aria-label="Sections">
+      <button type="button" data-view="learn" class="active">Learn</button>
+      <button type="button" data-view="practice">Practice</button>
+      <button type="button" data-view="dashboard" data-unlock="3">Dashboard</button>
+      <button type="button" data-view="glossary">Glossary</button>
+    </nav>
+    <button type="button" class="level-pill" id="level-pill" title="Your level">Level 1</button>
 
     <div class="status-group" aria-label="Connection status">
       <span class="status-item" id="st-ws" title="Dashboard WebSocket"><i class="dot"></i><span>WS</span></span>
@@ -41,7 +48,7 @@
       <button class="btn btn-sm btn-warn" id="btn-resume" type="button">Resume</button>
     </div>
 
-    <div class="toggles">
+    <div class="toggles" data-unlock="6">
       <label class="switch" title="Let the engine trade strategy signals automatically">
         <input type="checkbox" id="tg-auto"><span class="track"><span class="thumb"></span></span><span class="switch-label">Auto-trading</span>
       </label>
@@ -50,6 +57,30 @@
       </label>
     </div>
   </header>
+
+  <main class="learn" id="learn">
+    <div class="learn-inner" id="learn-home">
+      <section class="l-hero">
+        <p class="l-kicker" id="l-kicker">Your trading course</p>
+        <h1 id="l-title">Loading your course…</h1>
+        <div class="l-progress"><div class="l-progress-fill" id="l-progress-fill"></div></div>
+        <p class="l-progress-text" id="l-progress-text"></p>
+        <button type="button" class="btn btn-primary l-continue" id="l-continue" hidden></button>
+      </section>
+      <ol class="l-levels" id="l-levels"></ol>
+      <div class="l-foot" id="l-foot"></div>
+    </div>
+    <div class="learn-inner lesson" id="lesson" hidden></div>
+  </main>
+
+  <main class="glossary-view" id="glossary">
+    <div class="learn-inner">
+      <h1>Glossary</h1>
+      <p class="g-intro">Every trading word in the app, in plain English. You can also tap any <span class="term" data-term="pnl">underlined word</span> anywhere to see what it means.</p>
+      <input type="search" id="g-search" class="g-search" placeholder="Search, e.g. stop-loss or RSI" aria-label="Search the glossary">
+      <dl class="g-list" id="g-list"></dl>
+    </div>
+  </main>
 
   <main class="simple" id="simple">
     <div class="simple-inner">
@@ -60,6 +91,29 @@
       </section>
       <div class="s-notice" id="s-notice" hidden></div>
       <div class="s-cards" id="s-cards"></div>
+      <section class="s-panel" id="s-safety" data-unlock="2">
+        <div class="s-panel-head">
+          <h2>Your safety net</h2>
+          <p>Applies to every new buy. <span class="term" data-term="stop-loss">Stop-loss</span> and <span class="term" data-term="take-profit">take-profit</span> are measured from the price you pay.</p>
+        </div>
+        <form class="s-safety-form" id="s-safety-form" autocomplete="off">
+          <label>Sell if it falls <span class="input-suffix"><input type="number" name="stop_loss_pct" min="0.1" max="50" step="0.1" required><span>%</span></span></label>
+          <label>Sell if it rises <span class="input-suffix"><input type="number" name="take_profit_pct" min="0.1" max="200" step="0.1" required><span>%</span></span></label>
+          <label>Put in per trade <span class="input-suffix"><input type="number" name="max_position_pct" min="1" max="100" step="1" required><span>% of account</span></span></label>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+        <p class="s-safety-note" id="s-safety-note"></p>
+      </section>
+
+      <section class="s-panel" id="s-trades">
+        <div class="s-panel-head">
+          <h2>Your recent trades</h2>
+          <p>Press Explain to learn what happened and why. Reviewing trades is how traders get better.</p>
+        </div>
+        <ul class="s-trade-list" id="s-trade-list"></ul>
+        <p class="s-empty" id="s-trades-empty">No trades yet. Make your first one above.</p>
+      </section>
+
       <div class="s-foot">
         <button type="button" class="btn" id="s-refresh">Check again</button>
         <p>This is practice with pretend money, so you can't lose real money here. Suggestions are educated guesses
@@ -72,7 +126,7 @@
     <section class="chart-area panel">
       <div class="symbol-bar">
         <div class="symbol-tabs" id="symbol-tabs" role="tablist"></div>
-        <div class="chart-tools">
+        <div class="chart-tools" data-unlock="4">
           <label class="chk"><input type="checkbox" id="ov-sma20"><span class="swatch sw-sma20"></span>SMA20</label>
           <label class="chk"><input type="checkbox" id="ov-sma50"><span class="swatch sw-sma50"></span>SMA50</label>
           <label class="chk"><input type="checkbox" id="ov-bb"><span class="swatch sw-bb"></span>BB(20,2)</label>
@@ -110,7 +164,7 @@
         <div class="form-msg" id="ot-msg" hidden></div>
       </section>
 
-      <section class="card" id="card-ai">
+      <section class="card" id="card-ai" data-unlock="4">
         <div class="card-head">
           <h3>AI analysis</h3>
           <button type="button" class="btn btn-sm" id="ai-run">Analyze now</button>
@@ -118,7 +172,7 @@
         <div id="ai-body" class="ai-body"></div>
       </section>
 
-      <section class="card" id="card-strategy">
+      <section class="card" id="card-strategy" data-unlock="5">
         <div class="card-head"><h3>Strategy</h3><span class="card-tag mono" id="strat-symbol">—</span></div>
         <div class="field">
           <label for="strat-select">Strategy</label>
@@ -150,7 +204,7 @@
         <button type="button" class="tab" data-tab="trades">Trade log <span class="count" id="cnt-trades"></span></button>
         <button type="button" class="tab" data-tab="events">Event log</button>
         <button type="button" class="tab" data-tab="equity">Equity</button>
-        <button type="button" class="tab" data-tab="backtest">Backtest</button>
+        <button type="button" class="tab" data-tab="backtest" data-unlock="5">Backtest</button>
         <button type="button" class="tab" data-tab="account">Account</button>
         <span class="tabbar-spacer"></span>
         <button type="button" class="icon-btn" id="bottom-expand" title="Expand panel" aria-label="Expand panel">
@@ -260,5 +314,16 @@
   </main>
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
+  <div class="term-pop" id="term-pop" role="dialog" aria-modal="false" hidden></div>
+  <div class="levelup" id="levelup" role="dialog" aria-modal="true" aria-labelledby="levelup-title" hidden>
+    <div class="levelup-card">
+      <p class="l-kicker">Level up</p>
+      <h2 id="levelup-title"></h2>
+      <p id="levelup-text"></p>
+      <ul id="levelup-list"></ul>
+      <button type="button" class="btn btn-primary" id="levelup-go">Start the next lesson</button>
+      <button type="button" class="btn btn-ghost" id="levelup-close">Later</button>
+    </div>
+  </div>
 </body>
 </html>

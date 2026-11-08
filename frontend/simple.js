@@ -1,7 +1,8 @@
 // Simple view: the default, beginner-friendly screen. One card per coin, each ending in one clear action.
 const $ = (id) => document.getElementById(id);
 const REFRESH_MS = 5000;
-const STORE_KEY = "view";
+const level = () => Number(document.body.dataset.level) || 1;
+const learnRefresh = () => window.dispatchEvent(new Event("learn:refresh"));
 
 const advice = {}; // symbol -> latest answer from /api/advice
 let state = null;
@@ -13,23 +14,12 @@ function money(n) {
   return `${n < -0.005 ? "-" : ""}$${text}`;
 }
 
-async function api(path, method = "GET") {
-  const res = await fetch(path, { method });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.detail || "Something went wrong");
-  return body;
-}
-
-// ---------------------------------------------------------------- view switch
-function readView() {
-  try { return localStorage.getItem(STORE_KEY); } catch { return null; }
-}
-
-function setView(view) {
-  const simple = view !== "advanced";
-  document.body.classList.toggle("simple-mode", simple);
-  $("view-toggle").textContent = simple ? "Advanced" : "Simple view";
-  try { localStorage.setItem(STORE_KEY, simple ? "simple" : "advanced"); } catch { /* preference only */ }
+async function api(path, method = "GET", body) {
+  const res = await fetch(path, body === undefined ? { method }
+    : { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || "Something went wrong");
+  return data;
 }
 
 // ---------------------------------------------------------------- wording
@@ -79,12 +69,38 @@ function card(symbol) {
     <p class="s-why"></p>
     <p class="s-meta"></p>
     <p class="s-owned" hidden></p>
+    <div class="s-exits" hidden>
+      <p class="s-exits-text"></p>
+      <button type="button" class="btn btn-sm btn-ghost s-exits-edit">Change my exits</button>
+      <form class="s-exits-form" hidden autocomplete="off">
+        <label>Stop-loss price <input type="number" name="stop_loss" step="any" min="0"></label>
+        <label>Take-profit price <input type="number" name="take_profit" step="any" min="0"></label>
+        <div class="s-exits-btns"><button type="submit" class="btn btn-sm btn-primary">Save</button>
+        <button type="button" class="btn btn-sm btn-ghost s-exits-cancel">Cancel</button></div>
+      </form>
+    </div>
     <p class="s-plan" hidden></p>
     <button type="button" class="btn btn-block s-act" hidden></button>
     <button type="button" class="btn btn-block btn-ghost s-sell" hidden></button>
     <p class="s-msg" hidden></p>`;
   el.querySelector(".s-act").addEventListener("click", () => act(symbol));
   el.querySelector(".s-sell").addEventListener("click", () => sell(symbol));
+  const form = el.querySelector(".s-exits-form");
+  el.querySelector(".s-exits-edit").addEventListener("click", () => {
+    const pos = positionOf(symbol);
+    form.stop_loss.value = pos?.stop_loss ?? "";
+    form.take_profit.value = pos?.take_profit ?? "";
+    form.hidden = false;
+    form.stop_loss.focus();
+  });
+  el.querySelector(".s-exits-cancel").addEventListener("click", () => { form.hidden = true; });
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const num = (v) => (v === "" ? null : Number(v));
+    trade(symbol, () => api(`/api/positions/${symbol}`, "PUT",
+      { stop_loss: num(form.stop_loss.value), take_profit: num(form.take_profit.value) }));
+    form.hidden = true;
+  });
   return el;
 }
 
@@ -111,8 +127,20 @@ function renderCard(el) {
   if (pos) {
     const pnl = pos.unrealized_pnl;
     owned.textContent = `You own ${money(pos.market_value)} of this. You're ${pnl >= 0 ? "up" : "down"} ${money(Math.abs(pnl))} so far. `
-      + "We'll sell it for you if it moves too far either way.";
+      + (level() >= 2 ? "" : "We'll sell it for you if it moves too far either way (Level 2 teaches how).");
     owned.className = `s-owned ${pnl >= 0 ? "up" : "down"}`;
+  }
+
+  const exits = field(".s-exits");
+  exits.hidden = !pos || level() < 2;
+  if (pos && level() >= 2) {
+    const sl = pos.stop_loss ? `falls to ${money(pos.stop_loss)} (stop-loss)` : null;
+    const tp = pos.take_profit ? `rises to ${money(pos.take_profit)} (take-profit)` : null;
+    field(".s-exits-text").textContent = sl || tp
+      ? `It sells automatically if the price ${[sl, tp].filter(Boolean).join(" or ")}. You paid ${money(pos.avg_price)}.`
+      : "No automatic exits are set on this coin. Consider adding a stop-loss.";
+  } else {
+    field(".s-exits-form").hidden = true;
   }
 
   const canBuy = a?.action === "buy" && !pos && !state.account.halted
@@ -158,6 +186,117 @@ function render() {
     cards.replaceChildren(...state.symbols.map(card));
   }
   [...cards.children].forEach(renderCard);
+  if (level() >= 2) renderSafety();
+}
+
+// ---------------------------------------------------------------- safety net (level 2)
+const SAFETY_KEYS = ["stop_loss_pct", "take_profit_pct", "max_position_pct"];
+let safetyDirty = false;
+
+function renderSafety() {
+  const form = $("s-safety-form");
+  if (!safetyDirty) {
+    for (const key of SAFETY_KEYS) form[key].value = +(state.risk[key] * 100).toFixed(2);
+  }
+  const p = buyPlan();
+  $("s-safety-note").textContent = `With these settings, each buy puts in up to ${money(p.spend)}. If the stop-loss is hit `
+    + `you'd lose about ${money(p.loss)}; if the take-profit is hit you'd make about ${money(p.gain)} (before fees). `
+    + `That's risking $1 to make $${(p.gain / Math.max(p.loss, 1e-9)).toFixed(1)}.`;
+}
+
+async function saveSafety(e) {
+  e.preventDefault();
+  const form = e.target;
+  const body = Object.fromEntries(SAFETY_KEYS.map((k) => [k, Number(form[k].value) / 100]));
+  try {
+    await api("/api/risk", "PUT", body);
+    safetyDirty = false;
+    $("s-safety-note").dataset.saved = "1";
+    learnRefresh();
+  } catch (err) {
+    $("s-safety-note").textContent = `Couldn't save: ${err.message}`;
+    return;
+  }
+  await refreshState();
+}
+
+// ---------------------------------------------------------------- recent trades + explanations
+const explanations = {};
+let trades = [];
+
+function tradeLine(t) {
+  const name = { BTCUSDT: "Bitcoin", ETHUSDT: "Ethereum", SOLUSDT: "Solana" }[t.symbol] || t.symbol.replace(/USDT$/, "");
+  const when = new Date(t.ts * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const how = { manual: "by you", stop_loss: "by your stop-loss", take_profit: "by your take-profit",
+    trailing_stop: "by your trailing stop", signal: "by auto-trading" }[t.reason] || "";
+  if (t.side === "buy") return { text: `Bought ${money(t.qty * t.price)} of ${name} ${how}`, when, tone: "" };
+  const pnl = t.pnl ?? 0;
+  return { text: `Sold ${name} ${how}: ${pnl >= 0 ? "made" : "lost"} ${money(Math.abs(pnl))}`, when, tone: pnl >= 0 ? "up" : "down" };
+}
+
+function renderTrades() {
+  const list = $("s-trade-list");
+  $("s-trades-empty").hidden = trades.length > 0;
+  list.replaceChildren(...trades.map((t) => {
+    const li = document.createElement("li");
+    const line = tradeLine(t);
+    li.className = "s-trade";
+    li.innerHTML = `<div class="s-trade-row"><span class="s-trade-text"></span><span class="s-trade-when"></span>
+      <button type="button" class="btn btn-sm">Explain</button></div><div class="s-explain" hidden></div>`;
+    li.querySelector(".s-trade-text").textContent = line.text;
+    if (line.tone) li.querySelector(".s-trade-text").classList.add(line.tone);
+    li.querySelector(".s-trade-when").textContent = line.when;
+    const btn = li.querySelector("button");
+    const box = li.querySelector(".s-explain");
+    const show = (x) => {
+      box.hidden = false;
+      box.innerHTML = "<b></b><p class='e-what'></p><p class='e-why'></p><p class='e-lesson'><span>Lesson:</span> </p><p class='e-src'></p>";
+      box.querySelector("b").textContent = x.headline;
+      box.querySelector(".e-what").textContent = x.what;
+      box.querySelector(".e-why").textContent = x.why;
+      box.querySelector(".e-lesson").append(x.lesson);
+      box.querySelector(".e-src").textContent = x.source === "rules" ? "Explained by the app's rules" : "Explained by your AI";
+      btn.textContent = "Hide";
+    };
+    if (explanations[t.id]?.open) show(explanations[t.id].data);
+    btn.addEventListener("click", async () => {
+      if (!box.hidden) {
+        box.hidden = true;
+        btn.textContent = "Explain";
+        explanations[t.id].open = false;
+        return;
+      }
+      if (explanations[t.id]) {
+        explanations[t.id].open = true;
+        show(explanations[t.id].data);
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = "Thinking…";
+      try {
+        const data = await api(`/api/trades/${t.id}/explain`, "POST");
+        explanations[t.id] = { data, open: true };
+        show(data);
+        learnRefresh();
+      } catch (err) {
+        box.hidden = false;
+        box.textContent = `Couldn't explain this trade. ${err.message}`;
+        btn.textContent = "Explain";
+      }
+      btn.disabled = false;
+    });
+    return li;
+  }));
+}
+
+async function refreshTrades() {
+  try {
+    const latest = await api("/api/trades?limit=8");
+    if (latest.map((t) => t.id).join() !== trades.map((t) => t.id).join()) {
+      trades = latest;
+      renderTrades();
+    }
+  } catch { /* shown on next refresh */ }
 }
 
 function showMessage(symbol, text) {
@@ -171,6 +310,7 @@ async function refreshState() {
   try {
     state = await api("/api/state");
     render();
+    refreshTrades();
   } catch {
     $("s-next").textContent = "Can't reach the app right now. Trying again…";
   }
@@ -199,6 +339,7 @@ async function trade(symbol, request) {
   try {
     await request();
     showMessage(symbol, "");
+    learnRefresh();
     if (advice[symbol]) advice[symbol] = { ...advice[symbol], action: "wait" };
   } catch (err) {
     showMessage(symbol, `That didn't work. ${err.message}`);
@@ -215,11 +356,10 @@ const act = (symbol) => trade(symbol, () => fetch("/api/orders", {
 const sell = (symbol) => trade(symbol, () => api(`/api/positions/${symbol}/close`, "POST"));
 
 // ---------------------------------------------------------------- start
-$("view-toggle").addEventListener("click", () => {
-  setView(document.body.classList.contains("simple-mode") ? "advanced" : "simple");
-});
 $("s-refresh").addEventListener("click", checkCoins);
-setView(readView());
+$("s-safety-form").addEventListener("input", () => { safetyDirty = true; });
+$("s-safety-form").addEventListener("submit", saveSafety);
+window.addEventListener("learn:level", render);
 await refreshState();
 setInterval(refreshState, REFRESH_MS);
 checkCoins();

@@ -16,6 +16,7 @@ from app.backtest import bars_per_year, run_backtest
 from app.broker import RiskError
 from app.config import settings
 from app.engine import TradingEngine
+from app.learn import GLOSSARY
 from app.market import fetch_history
 from app.strategies import STRATEGIES, list_strategies
 
@@ -101,6 +102,20 @@ class BracketsRequest(BaseModel):
 
 class ResetRequest(BaseModel):
     cash: float | None = Field(default=None, gt=0)
+
+
+class AnswerRequest(BaseModel):
+    question: int
+    choice: int
+
+
+class LearnEvent(BaseModel):
+    name: str
+    value: str | None = None
+
+
+class UnlockRequest(BaseModel):
+    on: bool = True
 
 
 class BacktestRequest(BaseModel):
@@ -224,13 +239,57 @@ async def backtest(body: BacktestRequest):
         body.cash or settings.starting_cash, settings.fee_rate, settings.slippage_bps,
         bars_per_year(body.interval), symbol,
     )
+    engine.learn.record_backtest(body.strategy, result.get("metrics") or {})
     result["candles"] = data
     return result
 
 
 @app.post("/api/ai/analyze/{symbol}")
 async def ai_analyze(symbol: str):
-    return await engine.analyze(symbol)
+    result = await engine.analyze(symbol)
+    engine.learn.record("analyze")
+    return result
+
+
+@app.post("/api/trades/{trade_id}/explain")
+async def explain_trade(trade_id: int):
+    return await engine.explain_trade(trade_id)
+
+
+# ---------------------------------------------------------------------- learning path
+@app.get("/api/learn")
+async def learn_summary():
+    return engine.learn.summary()
+
+
+@app.get("/api/learn/glossary")
+async def learn_glossary():
+    return GLOSSARY
+
+
+@app.get("/api/learn/lessons/{lesson_id}")
+async def learn_lesson(lesson_id: str):
+    return engine.learn.lesson(lesson_id)
+
+
+@app.post("/api/learn/lessons/{lesson_id}/answer")
+async def learn_answer(lesson_id: str, body: AnswerRequest):
+    return engine.learn.answer(lesson_id, body.question, body.choice)
+
+
+@app.post("/api/learn/events")
+async def learn_event(body: LearnEvent):
+    return engine.learn.record_client(body.name, body.value)
+
+
+@app.post("/api/learn/unlock-all")
+async def learn_unlock_all(body: UnlockRequest):
+    return engine.learn.set_unlock_all(body.on)
+
+
+@app.post("/api/learn/reset")
+async def learn_reset():
+    return engine.learn.reset()
 
 
 # ---------------------------------------------------------------------- WebSocket

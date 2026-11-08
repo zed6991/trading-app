@@ -303,6 +303,33 @@ class AIAnalyst:
             "latency_ms": int((time.perf_counter() - start) * 1000),
         }
 
+    async def explain_trade(self, facts: dict, draft: dict, level: int) -> dict | None:
+        """Reword a rule-based trade explanation for a learner. Returns {what, why, lesson} or None on any failure.
+
+        Numbers come from `facts`; the model is told not to change them. Terms the learner hasn't reached yet
+        (by level) must not appear, so the explanation always matches what they've been taught.
+        """
+        system = (
+            "You are a patient trading teacher reviewing ONE paper trade with a beginner. "
+            f"The learner is on level {level} of 6 (1 basics, 2 stop-loss/take-profit/position size, 3 charts, "
+            "4 indicators, 5 strategies/backtesting, 6 automation). Only use trading terms from their level or "
+            "below, and explain any term in a few words. Use the exact numbers given; never invent prices or "
+            "reasons. Be kind and concrete, never promise profit. Respond with ONLY strict JSON: "
+            '{"what": "1-2 sentences: what happened", "why": "1-2 sentences: why it ended this way", '
+            '"lesson": "1 sentence: the single most useful takeaway for next time"}'
+        )
+        user = f"Trade facts: {json.dumps(facts, default=str)}\nDraft explanation: {json.dumps(draft)}\nReturn the JSON now."
+        try:
+            raw = _extract_json(await self._ask_model([{"role": "system", "content": system},
+                                                       {"role": "user", "content": user}]))
+            out = {k: _trim_summary(raw.get(k, "")) for k in ("what", "why", "lesson")}
+            if not all(out.values()):
+                raise ValueError("missing fields")
+            return out
+        except Exception as exc:  # noqa: BLE001 - fall back to the rule-based draft
+            logger.warning("Trade explanation via %s failed (%s); using rules", self.model, exc)
+            return None
+
     async def health(self) -> dict:
         try:
             async with self._client(min(self.timeout, 5.0)) as client:

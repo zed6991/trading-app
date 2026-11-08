@@ -8,6 +8,25 @@ It includes a backtester, risk controls (position sizing, SL/TP, trailing stop, 
 > financial advice. Backtest and paper results do not predict live performance (real fills, liquidity, fees and
 > latency differ).
 
+## Learning path
+
+The app opens on **Learn**: a six-level course that teaches trading from scratch and unlocks the app as you go.
+
+| Level | Topic | Unlocks |
+|---|---|---|
+| 1 | Trading basics: prices, cash, equity, fees | Practice (buy/sell with $100k pretend money) |
+| 2 | Protecting your money: stop-loss, take-profit, sizing | Safety-net settings, editing exits on your coins |
+| 3 | Reading charts: candlesticks, trends, support/resistance | Dashboard with live charts and the order ticket |
+| 4 | Indicators: moving averages, RSI, MACD, Bollinger | Chart indicators, AI analyst |
+| 5 | Strategies and backtesting | Strategy settings, backtester |
+| 6 | Automation and your trading plan | Auto-trading, AI filter |
+
+Each level has short lessons with quizzes (answer correctly to pass, with an explanation for each answer) and
+practice challenges that tick off automatically when you do them in the app. Every trading word is tappable for a
+plain-English definition, and the **Glossary** lists them all. On Practice, **Explain** on any trade gives a review
+of what happened and the lesson in it (local LLM when available, rule-based otherwise). Experienced users can
+"Unlock everything" at the bottom of the Learn page.
+
 ## Architecture
 
 ```
@@ -100,6 +119,13 @@ Errors return HTTP 400 `{"detail": "..."}`.
 | `POST /api/backtest` | `{symbol, interval, bars<=5000, strategy, params, risk?, cash?}` -> metrics, equity curve, trades, markers, candles |
 | `POST /api/ai/analyze/{symbol}` | Run an AI analysis now |
 | `POST /api/advice/{symbol}` | One plain buy/sell/wait suggestion from hourly candles; powers the Simple view |
+| `GET /api/learn` | Course progress: current level, levels with lessons/challenges and their status |
+| `GET /api/learn/glossary` | All glossary terms |
+| `GET /api/learn/lessons/{id}` | Lesson cards + quiz questions (answers stay on the server) |
+| `POST /api/learn/lessons/{id}/answer` | `{question, choice}` -> `{correct, why, lesson_done, level, leveled_up}` |
+| `POST /api/learn/events` | `{name: chart\|indicator\|ticket, value?}` browser-only challenge actions |
+| `POST /api/learn/unlock-all` / `POST /api/learn/reset` | `{on}` skip the gating / restart the course |
+| `POST /api/trades/{id}/explain` | Beginner explanation of a trade `{headline, what, why, lesson, lesson_id, source}` |
 | `WS /ws` | Messages `{type, data}`: `snapshot` on connect, then `tick`, `account`, `trade`, `log`, `analysis`, `engine`, `risk`, `status`; send `{"type":"ping"}` for `{"type":"pong"}` |
 
 Strategies: `sma_cross`, `ema_macd`, `rsi_reversion`, `bollinger_breakout`.

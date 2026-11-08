@@ -188,7 +188,7 @@ GLOSSARY: list[dict[str, Any]] = [
     {"slug": "auto-trading", "term": "Auto-trading", "level": 6, "aliases": ["auto trading", "auto"],
      "short": "Letting the app place trades for you whenever your strategy gives a signal.",
      "more": "Your stop-loss, position size and daily loss limit still apply to every automatic trade."},
-    {"slug": "ai-filter", "term": "AI filter", "level": 6, "aliases": ["ai analysis", "ai analyst"],
+    {"slug": "ai-filter", "term": "AI filter", "level": 6, "aliases": [],
      "short": "Auto-trading only takes a buy signal if the AI analyst also likes the coin.",
      "more": "Fewer trades, hopefully better ones. The AI can be wrong too."},
     {"slug": "trading-plan", "term": "Trading plan", "level": 6, "aliases": ["plan"],

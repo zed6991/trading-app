@@ -1,25 +1,36 @@
 # Project purpose
 
-This project exists to make trading accessible to anyone — including people with zero trading knowledge,
-no finance background, and no interest in learning jargon. The user should be spoon-fed every decision,
-insight and recommendation. They should never have to interpret a chart, an indicator or a metric themselves.
+This is a **learning app first**. It teaches complete beginners to trade, step by step, with pretend money and
+real prices. The user learns as they go: short lessons, quick quizzes, hands-on practice challenges, and
+explanations of their own trades. Topics get more complex level by level, and the app's features unlock as the
+matching topic is taught.
 
-## What that means for every change
+## The course (`backend/app/learn.py`)
 
-- **Decide for the user.** Every screen should end in a clear recommendation ("Buy", "Sell", "Do nothing"),
-  not raw data they have to interpret. Sensible defaults everywhere; settings are optional, never required.
-- **Plain English only.** No unexplained jargon (RSI, MACD, Sharpe, drawdown, bps, etc.). If a term must
-  appear, put a one-line plain-language explanation right next to it ("RSI 72 — the price has risen fast and
-  may be due to cool off").
-- **Explain the why in one sentence.** Each recommendation, AI analysis and backtest result gets a short
-  "what this means for you" line, e.g. "This strategy would have lost $450 over 3 weeks — don't use it."
-- **Translate numbers into outcomes.** Prefer dollars and simple words ("you'd have made $1,200") over
-  percentages and ratios. Use green/red and simple verdicts (good / risky / avoid).
-- **Guide, don't overwhelm.** Show the one next action first; hide advanced controls (indicator toggles,
-  strategy params, risk limits) behind an "Advanced" section.
-- **Protect the user by default.** Conservative risk limits on, auto-trading off until they opt in, and
-  plain warnings before anything risky. Never imply guaranteed profit; this is paper trading.
-- **AI output is written for a beginner.** Prompts in `backend/app/ai.py` should ask the model for a
-  plain-language verdict and a single recommended action, not analyst-speak.
+Six levels: 1 basics → 2 protecting your money → 3 reading charts → 4 indicators → 5 strategies & backtesting →
+6 automation & your trading plan. A level is complete when every lesson quiz is answered correctly and every
+non-bonus challenge is done; that unlocks the next level. Level N's features are usable while on level N
+(frontend: `data-unlock="N"`, hidden until `body.unlock-N`). "Unlock everything" exists for experienced users.
+
+Challenges complete automatically from real actions: the engine calls `engine.learn.record*` on fills, risk and
+bracket changes, auto-trading, AI analysis, backtests and explanations. Browser-only actions (viewing charts,
+toggling indicators, using the order ticket) go through `POST /api/learn/events` (whitelisted in `CLIENT_EVENTS`).
+
+## Rules for every change
+
+- **Teach, don't just decide.** Recommendations still end in a clear action, but say *why* in terms the user
+  has learned, so they can make the call themselves next time.
+- **Introduce jargon only when it's taught.** Every trading term shown in the UI must exist in `GLOSSARY` so it's
+  tappable (lesson text uses `[[slug]]` / `[[slug|shown text]]`; dashboard labels are auto-linked by
+  `frontend/learn.js`). Don't show a feature before the level that teaches it.
+- **Plain English, short sentences.** Lessons are 2–4 short cards plus 2–3 quiz questions with a one-line "why".
+  Explain with dollar examples before percentages and ratios.
+- **Learning by doing.** New features should come with a practice challenge that uses them.
+- **Review every trade.** Trade explanations (`rule_explanation` + optional AI rewording in `ai.py`) must keep
+  the exact numbers, use only terms from the learner's level or below, and end with one lesson.
+- **Protect the user by default.** Conservative risk limits, auto-trading off until level 6 and opted in, no
+  implied guaranteed profit. This is paper trading.
+- **Keep the curriculum valid.** `backend/tests/test_learn.py` checks that every glossary link resolves, quiz
+  answers are valid and challenge events exist. Run the tests after editing content.
 
 See `CONTRACT.md` for module interfaces and `README.md` for setup.
