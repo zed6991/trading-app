@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Paper Trader AI</title>
+  <meta name="color-scheme" content="dark">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+  <script type="module" src="app.js"></script>
+  <script type="module" src="simple.js"></script>
+</head>
+<body class="simple-mode">
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5-6 4 4 8-10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="brand-name">Paper<b>Trader</b> AI</span>
+      <span class="badge badge-paper">PAPER</span>
+    </div>
+
+    <button type="button" class="btn btn-sm view-toggle" id="view-toggle">Advanced</button>
+
+    <div class="status-group" aria-label="Connection status">
+      <span class="status-item" id="st-ws" title="Dashboard WebSocket"><i class="dot"></i><span>WS</span></span>
+      <span class="status-item" id="st-market" title="Binance market stream"><i class="dot"></i><span>Market</span></span>
+      <span class="status-item" id="st-ai" title="AI model (Ollama)"><i class="dot"></i><span id="st-ai-label">AI</span></span>
+    </div>
+
+    <div class="metrics">
+      <div class="metric"><span class="metric-label">Equity</span><span class="metric-value mono" id="m-equity">—</span></div>
+      <div class="metric"><span class="metric-label">Day PnL</span><span class="metric-value mono" id="m-day">—</span><span class="metric-sub mono" id="m-day-pct"></span></div>
+      <div class="metric"><span class="metric-label">Total PnL</span><span class="metric-value mono" id="m-total">—</span><span class="metric-sub mono" id="m-total-pct"></span></div>
+      <div class="metric"><span class="metric-label">Cash</span><span class="metric-value mono" id="m-cash">—</span></div>
+    </div>
+
+    <div class="halt-box" id="halt-box" hidden>
+      <span class="badge badge-halted" id="halt-badge">HALTED</span>
+      <button class="btn btn-sm btn-warn" id="btn-resume" type="button">Resume</button>
+    </div>
+
+    <div class="toggles">
+      <label class="switch" title="Let the engine trade strategy signals automatically">
+        <input type="checkbox" id="tg-auto"><span class="track"><span class="thumb"></span></span><span class="switch-label">Auto-trading</span>
+      </label>
+      <label class="switch" title="Only take buy signals the AI analyst agrees with">
+        <input type="checkbox" id="tg-ai"><span class="track"><span class="thumb"></span></span><span class="switch-label">AI filter</span>
+      </label>
+    </div>
+  </header>
+
+  <main class="simple" id="simple">
+    <div class="simple-inner">
+      <section class="s-hero">
+        <p class="s-balance">You have <b id="s-balance">—</b> of practice money.</p>
+        <p class="s-result" id="s-result"></p>
+        <p class="s-next" id="s-next" aria-live="polite">Checking the coins…</p>
+      </section>
+      <div class="s-notice" id="s-notice" hidden></div>
+      <div class="s-cards" id="s-cards"></div>
+      <div class="s-foot">
+        <button type="button" class="btn" id="s-refresh">Check again</button>
+        <p>This is practice with pretend money, so you can't lose real money here. Suggestions are educated guesses
+           that haven't been proven to make money, so please don't copy them with real money.</p>
+      </div>
+    </div>
+  </main>
+
+  <main class="layout">
+    <section class="chart-area panel">
+      <div class="symbol-bar">
+        <div class="symbol-tabs" id="symbol-tabs" role="tablist"></div>
+        <div class="chart-tools">
+          <label class="chk"><input type="checkbox" id="ov-sma20"><span class="swatch sw-sma20"></span>SMA20</label>
+          <label class="chk"><input type="checkbox" id="ov-sma50"><span class="swatch sw-sma50"></span>SMA50</label>
+          <label class="chk"><input type="checkbox" id="ov-bb"><span class="swatch sw-bb"></span>BB(20,2)</label>
+          <div class="seg seg-sm" id="lower-toggle" role="group" aria-label="Lower pane">
+            <button type="button" data-pane="rsi">RSI</button>
+            <button type="button" data-pane="macd">MACD</button>
+          </div>
+        </div>
+      </div>
+      <div class="chart-stack">
+        <div class="chart-main-wrap">
+          <div class="legend mono" id="legend"></div>
+          <div class="chart-box" id="chart-main"></div>
+        </div>
+        <div class="chart-lower-wrap">
+          <div class="legend legend-lower mono" id="lower-legend"></div>
+          <div class="chart-box" id="chart-lower"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="sidebar">
+      <section class="card" id="card-order">
+        <div class="card-head"><h3>Order ticket</h3><span class="card-tag mono" id="ot-symbol">—</span></div>
+        <div class="seg seg-side" id="ot-side" role="group" aria-label="Side">
+          <button type="button" data-side="buy" class="active buy">Buy</button>
+          <button type="button" data-side="sell" class="sell">Sell</button>
+        </div>
+        <div class="field">
+          <label for="ot-qty">Quantity</label>
+          <input type="number" id="ot-qty" min="0" step="any" placeholder="Auto (risk-sized)" inputmode="decimal">
+        </div>
+        <div class="hint mono" id="ot-est">—</div>
+        <button type="button" class="btn btn-block btn-buy" id="ot-submit">Buy</button>
+        <div class="form-msg" id="ot-msg" hidden></div>
+      </section>
+
+      <section class="card" id="card-ai">
+        <div class="card-head">
+          <h3>AI analysis</h3>
+          <button type="button" class="btn btn-sm" id="ai-run">Analyze now</button>
+        </div>
+        <div id="ai-body" class="ai-body"></div>
+      </section>
+
+      <section class="card" id="card-strategy">
+        <div class="card-head"><h3>Strategy</h3><span class="card-tag mono" id="strat-symbol">—</span></div>
+        <div class="field">
+          <label for="strat-select">Strategy</label>
+          <select id="strat-select"></select>
+        </div>
+        <p class="desc" id="strat-desc"></p>
+        <div class="param-grid" id="strat-params"></div>
+        <div class="btn-row">
+          <button type="button" class="btn btn-sm btn-ghost" id="strat-defaults">Defaults</button>
+          <button type="button" class="btn btn-sm btn-primary" id="strat-save">Save</button>
+        </div>
+        <div class="form-msg" id="strat-msg" hidden></div>
+      </section>
+
+      <section class="card" id="card-risk">
+        <div class="card-head"><h3>Risk limits</h3></div>
+        <form id="risk-form" class="param-grid" autocomplete="off"></form>
+        <div class="btn-row">
+          <button type="button" class="btn btn-sm btn-ghost" id="risk-revert">Revert</button>
+          <button type="button" class="btn btn-sm btn-primary" id="risk-save">Save</button>
+        </div>
+        <div class="form-msg" id="risk-msg" hidden></div>
+      </section>
+    </aside>
+
+    <section class="bottom panel">
+      <div class="tabbar" role="tablist">
+        <button type="button" class="tab active" data-tab="positions">Positions <span class="count" id="cnt-positions"></span></button>
+        <button type="button" class="tab" data-tab="trades">Trade log <span class="count" id="cnt-trades"></span></button>
+        <button type="button" class="tab" data-tab="events">Event log</button>
+        <button type="button" class="tab" data-tab="equity">Equity</button>
+        <button type="button" class="tab" data-tab="backtest">Backtest</button>
+        <button type="button" class="tab" data-tab="account">Account</button>
+        <span class="tabbar-spacer"></span>
+        <button type="button" class="icon-btn" id="bottom-expand" title="Expand panel" aria-label="Expand panel">
+          <svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+
+      <div class="tab-body">
+        <div class="tab-pane active" id="tab-positions">
+          <table class="data">
+            <thead><tr>
+              <th>Symbol</th><th class="r">Qty</th><th class="r">Avg price</th><th class="r">Mark</th><th class="r">Value</th>
+              <th class="r">uPnL</th><th class="r">PnL %</th><th>Stop loss</th><th>Take profit</th><th>Strategy</th><th>Opened</th><th></th>
+            </tr></thead>
+            <tbody id="pos-body"></tbody>
+          </table>
+          <div class="empty" id="pos-empty">No open positions</div>
+        </div>
+
+        <div class="tab-pane" id="tab-trades">
+          <table class="data">
+            <thead><tr>
+              <th>Time</th><th>Symbol</th><th>Side</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Notional</th>
+              <th class="r">Fee</th><th class="r">PnL</th><th>Reason</th><th>Strategy</th>
+            </tr></thead>
+            <tbody id="trades-body"></tbody>
+          </table>
+          <div class="empty" id="trades-empty">No trades yet</div>
+        </div>
+
+        <div class="tab-pane" id="tab-events">
+          <div class="events mono" id="events-list"></div>
+          <div class="empty" id="events-empty">No events</div>
+        </div>
+
+        <div class="tab-pane tab-pane-fill" id="tab-equity">
+          <div class="equity-head">
+            <span class="muted">Account equity</span>
+            <span class="mono" id="eq-summary"></span>
+          </div>
+          <div class="chart-box" id="chart-equity"></div>
+        </div>
+
+        <div class="tab-pane" id="tab-backtest">
+          <div class="bt-layout">
+            <form class="bt-form" id="bt-form" autocomplete="off">
+              <div class="field"><label for="bt-symbol">Symbol</label><input id="bt-symbol" list="bt-symbols" required><datalist id="bt-symbols"></datalist></div>
+              <div class="field-row">
+                <div class="field"><label for="bt-interval">Interval</label>
+                  <select id="bt-interval">
+                    <option>1m</option><option>5m</option><option>15m</option><option selected>1h</option><option>4h</option><option>1d</option>
+                  </select>
+                </div>
+                <div class="field"><label for="bt-bars">Bars</label><input type="number" id="bt-bars" min="50" max="5000" step="1" value="1000"></div>
+              </div>
+              <div class="field"><label for="bt-strategy">Strategy</label><select id="bt-strategy"></select></div>
+              <div class="param-grid" id="bt-params"></div>
+              <div class="field"><label for="bt-cash">Starting cash (USD)</label><input type="number" id="bt-cash" min="1" step="any" value="10000"></div>
+              <div class="field-row">
+                <div class="field"><label for="bt-sl">Stop loss %</label><input type="number" id="bt-sl" min="0" step="any" placeholder="current"></div>
+                <div class="field"><label for="bt-tp">Take profit %</label><input type="number" id="bt-tp" min="0" step="any" placeholder="current"></div>
+              </div>
+              <button type="submit" class="btn btn-block btn-primary" id="bt-run">Run backtest</button>
+              <div class="form-msg" id="bt-msg" hidden></div>
+            </form>
+            <div class="bt-results" id="bt-results">
+              <div class="empty bt-placeholder" id="bt-placeholder">Configure a strategy and run a backtest on historical Binance data.</div>
+              <div class="bt-loading" id="bt-loading" hidden><span class="spinner"></span><span id="bt-loading-text">Running backtest…</span></div>
+              <div id="bt-output" hidden>
+                <div class="metrics-grid" id="bt-metrics"></div>
+                <div class="bt-charts">
+                  <div class="bt-chart"><div class="bt-chart-title">Price &amp; trades</div><div class="chart-box" id="bt-price"></div></div>
+                  <div class="bt-chart"><div class="bt-chart-title">Equity <span class="lg lg-strat">Strategy</span> <span class="lg lg-bh">Buy &amp; hold</span></div><div class="chart-box" id="bt-equity"></div></div>
+                </div>
+                <table class="data">
+                  <thead><tr><th>Time</th><th>Side</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Fee</th><th class="r">PnL</th><th>Reason</th></tr></thead>
+                  <tbody id="bt-trades"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-pane" id="tab-account">
+          <div class="acct-layout">
+            <div class="metrics-grid" id="acct-summary"></div>
+            <div class="acct-actions">
+              <div class="card card-flat">
+                <h4>Trading status</h4>
+                <p class="desc" id="acct-status-text">—</p>
+                <button type="button" class="btn btn-sm btn-warn" id="acct-resume" hidden>Resume trading</button>
+              </div>
+              <div class="card card-flat">
+                <h4>Reset paper account</h4>
+                <p class="desc">Closes the books: clears positions and the equity curve and restarts with the cash below.</p>
+                <div class="field-row">
+                  <div class="field"><label for="reset-cash">Starting cash (USD)</label><input type="number" id="reset-cash" min="1" step="any"></div>
+                  <div class="field field-btn"><button type="button" class="btn btn-danger" id="reset-btn">Reset account</button></div>
+                </div>
+                <div class="form-msg" id="reset-msg" hidden></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+</body>
+</html>
