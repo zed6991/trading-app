@@ -54,7 +54,10 @@ function nextStep() {
   if (checking && answers.length < state.symbols.length) return "Checking the coins…";
   if (state.account.halted) return "Trading is paused for now, so there's nothing to do.";
   const acts = answers.filter((a) => a.action !== "wait").sort((a, b) => b.confidence - a.confidence);
-  if (!acts.length) return "Nothing to do right now. Waiting is a fine choice.";
+  if (!acts.length) {
+    return state.account.positions.length || !answers.length ? "Nothing to do right now. Waiting is a fine choice."
+      : "Nothing looks like a good buy right now. Waiting is a fine choice, or press \"Buy anyway\" on any coin to practise.";
+  }
   return `Your next step: ${acts[0].action} ${acts[0].name}.`;
 }
 
@@ -143,18 +146,21 @@ function renderCard(el) {
     field(".s-exits-form").hidden = true;
   }
 
-  const canBuy = a?.action === "buy" && !pos && !state.account.halted
+  // Buying is always possible while there's room: this is practice, and the suggestion is only a guess.
+  const canBuy = !!a && !pos && !state.account.halted
     && state.account.positions.length < state.risk.max_open_positions;
+  const suggested = a?.action === "buy";
   const plan = field(".s-plan");
   plan.hidden = !canBuy;
   const button = field(".s-act");
   button.hidden = !canBuy;
   if (canBuy) {
     const p = buyPlan();
-    plan.textContent = `If you buy: we'd put in ${money(p.spend)}. We'll sell for you if it falls ${p.lossPct}% `
+    plan.textContent = (suggested ? "" : "The suggestion is to wait, but this is practice, so you can still buy to learn. ")
+      + `If you buy: we'd put in ${money(p.spend)}. We'll sell for you if it falls ${p.lossPct}% `
       + `(you'd lose about ${money(p.loss)}) or rises ${p.gainPct}% (you'd make about ${money(p.gain)}), before small fees.`;
-    button.textContent = `Buy ${money(p.spend)} of ${name}`;
-    button.className = "btn btn-block s-act btn-buy";
+    button.textContent = suggested ? `Buy ${money(p.spend)} of ${name}` : `Buy anyway: ${money(p.spend)} of ${name}`;
+    button.className = `btn btn-block s-act ${suggested ? "btn-buy" : "btn-ghost"}`;
   }
 
   const sellButton = field(".s-sell");

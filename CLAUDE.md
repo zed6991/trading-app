@@ -28,6 +28,10 @@ toggling indicators, using the order ticket) go through `POST /api/learn/events`
 - **Learning by doing.** New features should come with a practice challenge that uses them.
 - **Review every trade.** Trade explanations (`rule_explanation` + optional AI rewording in `ai.py`) must keep
   the exact numbers, use only terms from the learner's level or below, and end with one lesson.
+- **The coach teaches from facts.** `app/coach.py` computes stats and habits with rules; the LLM only rewords
+  (reviews are checked with `numbers_match` and may not add points). Chat gets the learner's level, taught and
+  untaught words, account, recent trades and current screen, and must never answer buy/sell with a yes/no.
+  Keep the offline (no Ollama) path working.
 - **Protect the user by default.** Conservative risk limits, auto-trading off until level 6 and opted in, no
   implied guaranteed profit. This is paper trading.
 - **Keep the curriculum valid.** `backend/tests/test_learn.py` checks that every glossary link resolves, quiz

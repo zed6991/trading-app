@@ -10,6 +10,7 @@ import httpx
 
 from app import indicators
 from app.ai import AIAnalyst, coin_name
+from app.coach import Coach
 from app.broker import PaperBroker, RiskError, RiskLimits
 from app.config import Settings, settings as default_settings
 from app.db import Database
@@ -47,6 +48,7 @@ class TradingEngine:
         )
         self.ai = AIAnalyst(self.settings.ollama_url, self.settings.ollama_model, self.settings.ollama_timeout)
         self.lock = asyncio.Lock()
+        self.coach = Coach(self)
         self.broker = self._load_broker()
         self.config = self._load_config()
         self._strategies: dict[str, Strategy] = {}

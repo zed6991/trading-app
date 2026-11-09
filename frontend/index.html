@@ -8,11 +8,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=2">
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="app.js"></script>
-  <script type="module" src="simple.js"></script>
-  <script type="module" src="learn.js"></script>
+  <script type="module" src="app.js?v=2"></script>
+  <script type="module" src="simple.js?v=2"></script>
+  <script type="module" src="learn.js?v=2"></script>
+  <script type="module" src="coach.js?v=2"></script>
 </head>
 <body class="simple-mode view-learn">
   <header class="topbar">
@@ -313,6 +314,27 @@
     </section>
   </main>
 
+  <button type="button" class="coach-fab" id="coach-fab" aria-label="Ask coach" aria-controls="coach" aria-expanded="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 9.5h8M8 12.5h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <span>Ask coach</span>
+  </button>
+  <aside class="coach" id="coach" role="dialog" aria-modal="false" aria-labelledby="coach-title" hidden>
+    <header class="coach-head">
+      <div>
+        <h2 id="coach-title">Your coach</h2>
+        <p>Knows your level and your practice account</p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" id="coach-clear" title="Start a new conversation">New chat</button>
+      <button type="button" class="coach-x" id="coach-close" aria-label="Close the coach">&times;</button>
+    </header>
+    <div class="coach-log" id="coach-log" aria-live="polite"></div>
+    <div class="coach-chips" id="coach-chips"></div>
+    <form class="coach-form" id="coach-form" autocomplete="off">
+      <textarea id="coach-input" rows="1" maxlength="600" placeholder="Ask anything, e.g. why did my trade lose?" aria-label="Your question"></textarea>
+      <button type="submit" class="btn btn-primary" id="coach-send">Send</button>
+    </form>
+    <p class="coach-note">Practice only. The coach explains, it doesn't predict prices.</p>
+  </aside>
   <div class="toasts" id="toasts" aria-live="polite"></div>
   <div class="term-pop" id="term-pop" role="dialog" aria-modal="false" hidden></div>
   <div class="levelup" id="levelup" role="dialog" aria-modal="true" aria-labelledby="levelup-title" hidden>

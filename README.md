@@ -27,6 +27,22 @@ plain-English definition, and the **Glossary** lists them all. On Practice, **Ex
 of what happened and the lesson in it (local LLM when available, rule-based otherwise). Experienced users can
 "Unlock everything" at the bottom of the Learn page.
 
+### AI coach
+
+**Ask coach** (bottom right, on every screen) opens a chat with a tutor that knows your level, your practice
+account, your recent trades and the screen you're on (`backend/app/coach.py`).
+
+- **Ask anything:** answers use only words you've been taught (new ones get explained), point to the lesson that
+  covers the topic, and suggest follow-up questions. Asked "should I buy?", it walks you through the checks for
+  your level instead of answering yes or no.
+- **Review my week:** your closed trades, wins and losses, result after fees, and habits it spotted: fees bigger
+  than the price moves, very short trades, buying again right after a loss, losses bigger than wins, a stop-loss
+  that's switched off or too much in each trade. Each point links the lesson to re-read.
+- **Facts first:** the numbers and habits come from fixed rules. The local LLM only rewords them; a reworded
+  review whose numbers don't match, or that drops a section, is thrown away. Without Ollama the coach still
+  defines glossary words, gives your next step and reviews your trades.
+- API: `POST /api/coach/ask` `{message, history, view, symbol}`, `GET /api/coach/review?days=7`, `GET /api/coach/next`.
+
 ## Architecture
 
 ```

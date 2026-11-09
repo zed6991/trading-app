@@ -8,13 +8,14 @@ const CHALLENGE_VIEW = {
   manual_buy: "practice", manual_sell: "practice", win: "practice", risk: "practice", brackets: "practice",
   protect_exit: "practice", explain: "practice", chart: "dashboard", ticket: "dashboard", indicator: "dashboard",
   analyze: "dashboard", backtest: "dashboard", backtest_strategy: "dashboard", beat_hold: "dashboard",
-  auto_on: "dashboard", auto_trade: "dashboard",
+  auto_on: "dashboard", auto_trade: "dashboard", coach_ask: "coach", coach_review: "coach",
 };
 const CHALLENGE_EVENT = {
   "first-buy": "manual_buy", "first-sell": "manual_sell", "first-win": "win", "set-safety-net": "risk",
   "edit-stop": "brackets", "auto-exit": "protect_exit", "view-charts": "chart", "use-ticket": "ticket",
   "indicator-on": "indicator", "ask-ai": "analyze", "run-backtest": "backtest", "compare-strategies": "backtest_strategy",
   "beat-hold": "beat_hold", "auto-on": "auto_on", "explain-trade": "explain", "auto-trade": "auto_trade",
+  "ask-coach": "coach_ask", "weekly-review": "coach_review",
 };
 
 let course = null; // GET /api/learn
@@ -177,6 +178,10 @@ function renderHome() {
 
 function goChallenge(id) {
   const target = CHALLENGE_VIEW[CHALLENGE_EVENT[id]] || "practice";
+  if (target === "coach") {
+    window.dispatchEvent(new CustomEvent("learn:open-coach", { detail: id === "weekly-review" ? "review" : null }));
+    return;
+  }
   setView(target);
 }
 
@@ -516,6 +521,10 @@ function bind() {
     else setView("learn");
   });
   window.addEventListener("learn:refresh", () => setTimeout(loadCourse, 300));
+  window.addEventListener("learn:open-lesson", (e) => {
+    setView("learn");
+    openLesson(e.detail);
+  });
   let pending = 0;
   new MutationObserver(() => {
     clearTimeout(pending);

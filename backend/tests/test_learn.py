@@ -47,7 +47,7 @@ def test_quizzes_are_well_formed():
 
 def test_challenges_reachable():
     known = {"manual_buy", "manual_sell", "win", "risk", "brackets", "protect_exit", "analyze", "backtest",
-             "backtest_strategy", "beat_hold", "auto_on", "explain", "auto_trade"} | CLIENT_EVENTS
+             "backtest_strategy", "beat_hold", "auto_on", "explain", "auto_trade", "coach_ask", "coach_review"} | CLIENT_EVENTS
     ids = set()
     for lvl in LEVELS:
         assert any(not c["bonus"] for c in lvl["challenges"])
@@ -76,7 +76,7 @@ def test_progression(learning):
     assert learning.level() == 2
     lvl1 = learning.summary()["levels"][0]
     assert lvl1["status"] == "done"
-    assert [c["done"] for c in lvl1["challenges"]] == [True, True, False]  # bonus 'win' not needed
+    assert [c["done"] for c in lvl1["challenges"]] == [True, True, False, False]  # bonus coach + win not needed
 
 
 def test_distinct_challenge_and_persistence(learning):

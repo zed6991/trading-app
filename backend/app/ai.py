@@ -263,14 +263,14 @@ class AIAnalyst:
     def _client(self, timeout: float) -> httpx.AsyncClient:
         return httpx.AsyncClient(timeout=timeout, transport=self.transport)
 
-    async def _ask_model(self, messages: list[dict]) -> str:
+    async def _ask_model(self, messages: list[dict], temperature: float = 0.2) -> str:
         body = {
             "model": self.model,
             "messages": messages,
             "stream": False,
             "format": "json",
             "think": False,
-            "options": {"temperature": 0.2, "num_ctx": 8192},
+            "options": {"temperature": temperature, "num_ctx": 8192},
         }
         async with self._client(self.timeout) as client:
             resp = await client.post(f"{self.url}/api/chat", json=body)

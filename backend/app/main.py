@@ -118,6 +118,18 @@ class UnlockRequest(BaseModel):
     on: bool = True
 
 
+class CoachTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=4000)
+
+
+class CoachAsk(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    history: list[CoachTurn] = Field(default_factory=list, max_length=20)
+    view: str | None = None
+    symbol: str | None = None
+
+
 class BacktestRequest(BaseModel):
     symbol: str
     interval: Literal["1m", "5m", "15m", "1h", "4h", "1d"] = "1h"
@@ -256,6 +268,24 @@ async def explain_trade(trade_id: int):
     return await engine.explain_trade(trade_id)
 
 
+# ---------------------------------------------------------------------- AI coach
+@app.post("/api/coach/ask")
+async def coach_ask(body: CoachAsk):
+    history = [t.model_dump() for t in body.history]
+    return await engine.coach.ask(body.message, history, body.view, body.symbol)
+
+
+@app.get("/api/coach/review")
+async def coach_review(days: int = Query(7, ge=1, le=90)):
+    return await engine.coach.review(days)
+
+
+@app.get("/api/coach/next")
+async def coach_next():
+    review = engine.coach.rule_review(7)
+    return engine.coach.next_step(review)
+
+
 # ---------------------------------------------------------------------- learning path
 @app.get("/api/learn")
 async def learn_summary():
@@ -312,4 +342,15 @@ async def ws_endpoint(ws: WebSocket):
 
 # ---------------------------------------------------------------------- static dashboard (mounted last)
 settings.frontend_dir.mkdir(parents=True, exist_ok=True)
+
+
+@app.middleware("http")
+async def revalidate_frontend(request: Request, call_next):
+    """Make browsers check for a newer file each time, so app updates show up on a normal reload."""
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-cache")
+    return response
+
+
 app.mount("/", StaticFiles(directory=str(settings.frontend_dir), html=True), name="frontend")
