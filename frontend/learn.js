@@ -2,7 +2,8 @@
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 8000;
 const VIEW_KEY = "view";
-const VIEWS = ["learn", "practice", "dashboard", "lab", "glossary"];
+const VIEWS = ["learn", "practice", "dashboard", "lab", "code", "research", "agent", "settings", "glossary"];
+const VIEW_LEVEL = { dashboard: 3, lab: 4, code: 8, research: 12, agent: 13 };
 const TOP_LEVEL = 13; // levels 8-13 are on the roadmap
 // Where each challenge's event happens, so "Go" can take the learner straight there. Lab events also pick the tab.
 const EVENT_VIEW = {
@@ -15,6 +16,13 @@ const EVENT_VIEW = {
   luck_many: "lab:luck", luck_beat95: "lab:luck", backtest: "lab:backtest", backtest_strategy: "lab:backtest",
   beat_hold: "lab:backtest", walkforward: "lab:backtest", oos_beat_hold: "lab:backtest",
   coach_ask: "coach", coach_review: "coach",
+  code_run: "code", ex8: "code", ex9: "code", code_assist: "code", custom_backtest: "code:strategy",
+  lookahead_clean: "code:strategy", strategy_saved: "code:strategy", custom_oos_beat: "code:strategy",
+  portfolio_compare: "lab:portfolio", portfolio_apply: "lab:portfolio", kelly_run: "lab:portfolio", vol_target: "lab:portfolio",
+  factor_run: "lab:factors", ml_train: "lab:ml", ml_shuffle: "lab:ml", ml_leak: "lab:ml", ml_beat_hold: "lab:ml",
+  research_filing: "research", research_news: "research", research_memory: "research", research_study: "research",
+  agent_run: "agent", agent_approve: "agent", kill_switch: "agent", capstone_start: "agent", capstone_report: "agent",
+  agent_on: "agent",
 };
 
 let course = null; // GET /api/learn
@@ -61,13 +69,13 @@ const levelNow = () => course?.level || 1;
 // ---------------------------------------------------------------- views + gating
 function setView(next) {
   if (!VIEWS.includes(next)) next = "learn";
-  if (next === "dashboard" && levelNow() < 3) next = "learn";
-  if (next === "lab" && levelNow() < 4) next = "learn";
+  if (VIEW_LEVEL[next] && levelNow() < VIEW_LEVEL[next] && !course?.unlock_all) next = "learn";
   view = next;
   const body = document.body;
   VIEWS.forEach((v) => body.classList.toggle(`view-${v}`, v === next));
   body.classList.toggle("simple-mode", next !== "dashboard");
   document.querySelectorAll("#main-nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === next));
+  document.getElementById("settings-btn")?.classList.toggle("active", next === "settings");
   storageSet(VIEW_KEY, next);
   window.scrollTo(0, 0);
   if (next === "dashboard") window.dispatchEvent(new Event("resize")); // charts measure themselves on resize
@@ -81,7 +89,7 @@ function applyLevel(n) {
   for (let i = 1; i <= TOP_LEVEL; i += 1) body.classList.toggle(`unlock-${i}`, i <= top);
   $("level-pill").textContent = course?.finished ? "Graduate" : `Level ${n}`;
   if (before !== n) window.dispatchEvent(new Event("learn:level"));
-  if ((view === "dashboard" && n < 3) || (view === "lab" && n < 4)) setView("learn");
+  if (VIEW_LEVEL[view] && n < VIEW_LEVEL[view] && !course?.unlock_all) setView("learn");
 }
 
 // ---------------------------------------------------------------- course data
@@ -149,9 +157,12 @@ function renderHome() {
   $("lesson").hidden = true;
   const cur = levelOf(levelNow());
   const total = course.total_levels || course.max_level;
-  $("l-kicker").textContent = course.finished ? `${course.title || "Your course"}: levels 1-${course.max_level} complete`
+  const more = total > course.max_level;
+  $("l-kicker").textContent = course.finished ? `${course.title || "Your course"}: complete`
     : `${course.title || "Your course"} · Level ${cur.n} of ${total}`;
-  $("l-title").textContent = course.finished ? `You've finished every level built so far. Levels ${course.max_level + 1}-${total} are coming.` : cur.title;
+  $("l-title").textContent = !course.finished ? cur.title
+    : more ? `You've finished every level built so far. Levels ${course.max_level + 1}-${total} are coming.`
+      : "You've finished the whole course: you're an AI-assisted quant trader in training. Keep testing honestly.";
   $("l-progress-fill").style.width = `${course.percent}%`;
   $("l-progress-text").textContent = course.unlock_all
     ? "Everything is unlocked. The lessons are still here whenever you want them."
@@ -190,9 +201,10 @@ function goChallenge(id) {
     window.dispatchEvent(new CustomEvent("learn:open-coach", { detail: id === "weekly-review" ? "review" : null }));
     return;
   }
-  const [where, labTab] = target.split(":");
-  if (labTab) window.dispatchEvent(new CustomEvent("lab:open", { detail: labTab }));
+  const [where, sub] = target.split(":");
+  if (where === "lab" && sub) window.dispatchEvent(new CustomEvent("lab:open", { detail: sub }));
   setView(where);
+  if (where === "code" && sub === "strategy") window.dispatchEvent(new CustomEvent("code:open", { detail: { kind: "strategy" } }));
 }
 
 async function footAction(btn) {
@@ -490,6 +502,10 @@ function bind() {
     if (!b) return;
     if (b.dataset.view === "learn" && lesson) closeLesson();
     setView(b.dataset.view);
+  });
+  $("settings-btn").addEventListener("click", () => {
+    if (lesson) closeLesson();
+    setView("settings");
   });
   $("level-pill").addEventListener("click", () => {
     if (lesson) closeLesson();

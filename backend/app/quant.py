@@ -245,9 +245,17 @@ def luck_test(candles: list[dict], strategy: str, params: dict | None, cost: flo
     if len(candles) < 60:
         raise ValueError("Not enough history for a luck test.")
     strat = make_strategy(strategy, params)
+    pos = _positions_from_signals(strat.signals(candles))
+    out = luck_from_positions(candles, pos, cost, trials, seed)
+    return {"strategy": strategy, "params": dict(strat.params), **out}
+
+
+def luck_from_positions(candles: list[dict], pos: np.ndarray, cost: float, trials: int = 500,
+                        seed: int | None = None) -> dict:
+    """Luck test for any holding pattern: pos[i] = 1 while holding during bar i (already shifted, no look-ahead)."""
+    pos = np.asarray(pos, dtype=float)
     close = np.array([c["close"] for c in candles], dtype=float)
     r = np.concatenate([[0.0], close[1:] / close[:-1] - 1])
-    pos = _positions_from_signals(strat.signals(candles))
     real = _simple_returns(r, pos, cost)
     trips, hold = _round_trips(pos)
     if trips == 0:
@@ -273,7 +281,7 @@ def luck_test(candles: list[dict], strategy: str, params: dict | None, cost: flo
         verdict = (f"Only better than {beat:.0f}% of random traders. Coin flips did as well or better "
                    f"{100 - beat:.0f}% of the time, so there's no sign of an edge here.")
     return {
-        "strategy": strategy, "params": dict(strat.params), "trials": trials,
+        "trials": trials,
         "start": _date(candles[0]["time"]), "end": _date(candles[-1]["time"]),
         "strategy_return_pct": _r(real * 100, 2), "buy_hold_return_pct": _r(hold_return * 100, 2),
         "trades": trips, "avg_days_held": _r(hold, 1),

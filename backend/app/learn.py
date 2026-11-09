@@ -278,8 +278,9 @@ def rule_explanation(f: dict) -> dict:
     reason = f["reason"]
     strat = (f.get("strategy") or "your").replace("_", " ")
     if f["side"] == "buy":
-        how = ("by hand" if reason == "manual" else "with a limit order" if reason == "limit"
-               else f"automatically, because the {strat} strategy gave a buy signal")
+        how = {"manual": "by hand", "limit": "with a limit order", "rebalance": "to build your portfolio",
+               "agent": "after you approved the agent's proposal"}.get(
+            reason, f"automatically, because the {strat} strategy gave a buy signal")
         return {
             "headline": f"You bought {_money(f['value'])} of {coin}",
             "what": f"You bought {f['qty']:.6g} {f.get('unit', '')}{coin} at {_money(f['price'])} {how}. "
@@ -326,6 +327,13 @@ def rule_explanation(f: dict) -> dict:
         why = f"The {strat} strategy gave a sell signal, so auto-trading sold."
         lesson, lid = ("One trade says little about a strategy. Judge it over many trades, like a backtest does."
                        ), "l6-baseline"
+    elif reason == "rebalance":
+        why = "You sold it while rebalancing your portfolio back to its target weights."
+        lesson, lid = ("Rebalancing sells some of what rose and buys what fell. It controls risk, but every trade costs "
+                       "a little."), "l5-diversification"
+    elif reason == "agent":
+        why = "Your trading agent proposed this sale because its strategy turned to cash, and it went through."
+        lesson, lid = "Judge an agent over many trades, and keep the kill switch within reach.", "l6-baseline"
     else:
         how = "with a limit order" if reason == "limit" else "by hand"
         why = f"You sold {how} after the price {direction} from {_money(f['entry_price'])} to {_money(f['exit_price'])}."

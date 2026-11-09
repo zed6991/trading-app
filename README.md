@@ -11,8 +11,7 @@ gives suggestions and coaches you.
 
 ## The course
 
-The app opens on **Learn**. Each level unlocks the part of the app it teaches. Levels 1-7 are built; 8-13 are
-shown as "coming soon".
+The app opens on **Learn**. Each level unlocks the part of the app it teaches. All 13 levels are built.
 
 | Level | Topic | Unlocks |
 |---|---|---|
@@ -23,12 +22,12 @@ shown as "coming soon".
 | 5 | How assets move together: correlation, beta and the market factor, diversification | Lab → Correlation, Mixer |
 | 6 | Edge or luck? Randomness, random-trader baselines, sample size, data snooping | Lab → Luck test, best of 20 random strategies |
 | 7 | Testing strategies properly: strategy types, costs, look-ahead/survivorship bias, overfitting, walk-forward | Lab → Backtest with costs and walk-forward test |
-| 8 | Python for quants *(coming soon)* | Code Lab with an AI pair-programmer |
-| 9 | Your strategy in code *(coming soon)* | Custom strategies |
-| 10 | Portfolios and factors *(coming soon)* | Portfolio builder, factor breakdown |
-| 11 | Machine-learning signals *(coming soon)* | ML Lab |
-| 12 | LLMs as research analysts *(coming soon)* | Research agent (SEC filings, news) |
-| 13 | Agents and the capstone *(coming soon)* | Auto-trading agent |
+| 8 | Python for quants: DataFrames, returns, volatility and drawdowns in pandas | Code Lab (sandboxed Python), 5 auto-checked exercises, AI pair-programmer |
+| 9 | Your strategy in code: signal functions, shift (no look-ahead), vectorised backtests, costs | Strategy mode: look-ahead check, in/out-of-sample, luck test; saved strategies |
+| 10 | Portfolios and factors: equal/inverse-vol/risk parity/min-variance/mean-variance, vol targeting, Kelly, factor regression | Lab → Portfolio (fit on half, test on half; invest in the paper account), Lab → Factors |
+| 11 | Machine-learning signals: features and labels, time splits, leakage, accuracy vs baseline vs profit | Lab → ML (logistic regression, gradient boosting, shuffle and leak traps) |
+| 12 | LLMs as research analysts: SEC filings, structured extraction, hallucination checks, training-data leakage | Research: filings with verified numbers, news sentiment, "does the AI remember?", event studies |
+| 13 | Agents and the capstone: pipelines, human in the loop, kill switch, audit log | Agent (research → signal → risk → AI check → proposal), auto mode, 4-week capstone vs SPY |
 
 Each level has 2-4 short lessons with quizzes (choices are shuffled; the answer stays on the server) and practice
 challenges that tick off automatically when you do them in the app. Every trading word is tappable for a
@@ -36,6 +35,22 @@ plain-English definition, and the **Glossary** lists them all. On Practice, **Ex
 happened and the lesson in it. Experienced users can "Unlock everything" at the bottom of the Learn page.
 
 ### Screens
+
+- **Code (8-9):** Python runs in a separate process with a 20 s limit. On macOS it's wrapped in `sandbox-exec`: no
+  network, no reading your home folder (so no API keys), no writing outside its run folder. `qp.prices()` reads daily
+  CSVs the app prepares. Exercises are checked by code appended after yours. Strategy mode calls your `positions(df)`
+  on full, truncated and "mirrored future" histories to catch look-ahead, then backtests 70/30 with costs and runs the
+  luck test. The AI pair-programmer only gives hints in exercises.
+- **Research (12):** SEC EDGAR filings (8-K earnings releases use the EX-99.1 press release; 10-Q/10-K use MD&A). The AI
+  returns a summary, sentiment, key numbers with verbatim quotes, risks and guidance; every quote and summary number is
+  checked against the text and flagged if missing. Anonymised mode hides names and dates. Results are cached.
+- **Agent (13):** per asset: news score (LLM) → your strategy's state on daily data (built-in or your code) → rules size
+  the trade (risk % of equity ÷ a stop 2 daily standard deviations away, capped by the safety net) → LLM may flag a
+  concern → proposal. Approve mode by default; auto mode only at Level 13. Kill switch cancels everything and can sell
+  the agent's positions. Every run is logged. **Capstone:** write a plan, run 28 days, get a report vs SPY.
+- **Settings:** the local Ollama model is the default for every AI job. Optionally send chosen jobs (code, research,
+  agent, coach) to an OpenRouter model with a monthly dollar cap; spend is tracked per call and anything over the cap
+  or failing falls back to the local model.
 
 - **Practice:** stocks/ETFs and crypto in two lists. Open one to get an AI suggestion, place a market or limit order,
   size a buy by the dollars you'd accept losing, and change the exits on what you own. While the US market is closed,
@@ -87,6 +102,12 @@ account, your recent trades and the screen you're on (`backend/app/coach.py`).
 
  assets.py: the tradable universe (names, kinds, fees)     prices.py: history for any asset (+ daily cache)
  quant.py: stats, correlation/beta, portfolio mix, luck test, best-of-N random strategies
+ codelab.py: sandboxed Python runner, exercises + checkers, custom strategy evaluation (look-ahead check)
+ portfolio.py: weighting schemes, rebalancing with costs, vol targeting, Kelly, factor regression
+ ml.py: features/labels, time split with purge, logistic regression / gradient boosting, leak + shuffle traps
+ research.py: SEC EDGAR + news, LLM extraction with quote/number verification, anonymising, event studies
+ agent.py: trading agent (proposals, approval, kill switch, run log) and the capstone
+ llm.py: LLM router (Ollama default, OpenRouter per task, monthly cap, spend tracking)
  backtest.py: run_backtest, walk_forward (tune in-sample, test once out-of-sample)
 ```
 
@@ -133,6 +154,8 @@ Tests: `cd backend && ../.venv/bin/python -m pytest -q`
 | `DB_PATH` | `data/trading.db` | SQLite file |
 | `MARKET_DISABLED` | unset | `1` skips the Binance and Yahoo connections (tests/offline) |
 | `PORT` | `8000` | Port used by `start.sh` |
+| `SEC_USER_AGENT` | placeholder | Your name and email for SEC EDGAR (SEC asks every client for one) |
+| `OPENROUTER_API_KEY` | unset | Optional cloud AI key (or put it in `~/.config/openrouter/api_key`) |
 
 Risk limits and engine settings set in the dashboard are stored in the database and override the `.env` defaults.
 
@@ -173,5 +196,17 @@ Errors return HTTP 400 `{"detail": "..."}`.
 | `POST /api/learn/unlock-all` / `POST /api/learn/reset` | `{on}` skip the gating / restart the course |
 | `POST /api/trades/{id}/explain` | Beginner explanation of a trade `{headline, what, why, lesson, lesson_id, source}` |
 | `WS /ws` | Messages `{type, data}`: `snapshot` on connect, then `tick`, `account`, `trade`, `log`, `analysis`, `engine`, `risk`, `status`; send `{"type":"ping"}` for `{"type":"pong"}` |
+
+| `GET/PUT /api/ai/settings` | Local/cloud AI routing, model, tasks, monthly cap, spend this month |
+| `GET /api/code/exercises` · `POST /api/code/run` · `POST /api/code/check` | Code Lab: exercises, run code, check an exercise |
+| `POST /api/code/assist` | AI pair-programmer `{code, output, error, question, mode: explain\|hint\|fix\|ask, exercise_id?}` |
+| `POST /api/code/strategy/evaluate` · `GET/POST/DELETE /api/code/strategies` | Test `positions(df)` code; saved strategies |
+| `POST /api/lab/portfolio` · `POST /api/lab/kelly` · `POST /api/lab/factors` | Weighting schemes in/out-of-sample; Kelly; factor regression (symbol, mix or account) |
+| `POST /api/portfolio/apply` | `{weights, invest_pct, fit_limits}` rebalance the paper account to a portfolio |
+| `POST /api/lab/ml` | `{symbol, model, horizon, years, shuffle, leak}` train and evaluate |
+| `GET /api/research/filings/{ticker}` · `POST /api/research/filing` | List SEC filings; analyse one `{ticker, accession, anonymous}` |
+| `GET /api/research/news/{symbol}` · `POST /api/research/memory` · `POST /api/research/study` | News sentiment; memory test; earnings event study |
+| `GET/PUT /api/agent` · `POST /api/agent/run` · `POST /api/agent/proposals/{id}` · `POST /api/agent/kill` | Agent config, run now, approve/reject, kill switch |
+| `GET /api/capstone` · `POST /api/capstone/start` · `POST /api/capstone/report` | Capstone tracker and report |
 
 Strategies: `sma_cross`, `ema_macd`, `rsi_reversion`, `bollinger_breakout`, `momentum`.

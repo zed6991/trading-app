@@ -85,17 +85,21 @@ def run_backtest(
     bars_per_year: float | None = None,
     symbol: str = "BACKTEST",
     trade_from: int = 0,
+    signals: list | None = None,
 ) -> dict:
     """Simulate `strategy_name` over ascending `candles`.
 
     `bars_per_year` annualises the Sharpe ratio; if None it is inferred from the median candle spacing.
     `symbol` only labels the fills. Bars before `trade_from` only warm up the indicators: no trades, no equity.
+    `signals` (one "buy"/"sell"/None per candle) replaces the named strategy, e.g. for strategies written in the Code Lab.
     Raises KeyError for an unknown strategy and ValueError for invalid params/cash.
     """
-    strategy = make_strategy(strategy_name, params)
+    if signals is None:
+        signals = make_strategy(strategy_name, params).signals(candles)
+    elif len(signals) != len(candles):
+        raise ValueError("signals must have one entry per candle")
     broker = PaperBroker(cash, fee_rate, slippage_bps, limits)
     bpy = bars_per_year if bars_per_year else _infer_bars_per_year(candles)
-    signals = strategy.signals(candles)
     n = len(candles)
 
     equity_curve: list[dict] = []

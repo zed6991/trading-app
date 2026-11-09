@@ -123,3 +123,21 @@ Same-origin API (`/api/...`, `ws(s)://<host>/ws`).
 - `app/quant.py`: `stats`, `align`, `correlation`, `mix`, `luck_test`, `many_random` (daily candles in, JSON out).
 - `app/curriculum.py`: `GLOSSARY`, `LEVELS` (built), `ROADMAP` (coming soon), `COURSE_OUTLINE`, `TOTAL_LEVELS`.
 - WebSocket adds message type `orders` (list of waiting limit orders).
+
+
+## v3 additions: levels 8-13
+
+- `app/llm.py`: `LLMRouter(db, ollama_url, ollama_model, timeout)`; `chat(task, messages, json_mode, temperature,
+  max_tokens) -> {text, json, source: "cloud:<id>"|"local:<id>", cost_usd, latency_ms}` (raises `LLMError`, API
+  returns 503); `settings()/update()/public()/spend()/route(task)`. kv `ai_settings`, `ai_spend` (per month).
+- `app/codelab.py`: `run_code(code, extra, timeout, symbols) -> {ok, stdout, error, outputs[chart|table], check,
+  result, duration_ms, sandboxed}`; `EXERCISES` (+ `check_harness`), `strategy_harness(symbol)`,
+  `evaluate_strategy(code, symbol, fee_rate, slippage_bps)`. Data CSVs in `data/codelab/`.
+- `app/portfolio.py`: `weights_for`, `simulate`, `vol_target`, `compare`, `kelly`, `factor_breakdown` (ETF proxies
+  SPY, IWM, MTUM, VLUE, QUAL, USMV).
+- `app/ml.py`: `build_features`, `train(candles, symbol, model, horizon, split, shuffle, leak, cost, threshold)`.
+- `app/research.py`: `filings`, `filing_text`, `verify_extraction`, `anonymise`, `Researcher(db, llm)` with
+  `analyse_filing`, `news`, `memory_test`, `event_study` (results cached in kv `research:*`).
+- `app/agent.py`: `Agent(engine)` (`config/update/state/run_once/decide/kill/loop`; kv `agent`, `agent_proposals`,
+  `agent_runs`) and `Capstone(engine)` (kv `capstone`). Fill reasons add `rebalance` and `agent`.
+- `engine`: `llm`, `researcher`, `agent`, `capstone`, `apply_portfolio`, `custom_strategies` (kv `custom_strategies`).

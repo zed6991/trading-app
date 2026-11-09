@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import math
 import os
 import time
 from typing import Any
@@ -16,6 +17,7 @@ from app.config import Settings, settings as default_settings
 from app.db import Database
 from app.hub import Hub
 from app.learn import Learning, rule_explanation, trade_facts
+from app.llm import LLMRouter
 from app.market import MarketData, fetch_klines
 from app.stocks import StockFeed, market_status
 from app.strategies import STRATEGIES, Strategy, make_strategy
@@ -98,6 +100,14 @@ class TradingEngine:
             self.symbols, self.interval, self.settings.history_bars, self.on_update, self.on_close
         )
         self.ai = AIAnalyst(self.settings.ollama_url, self.settings.ollama_model, self.settings.ollama_timeout)
+        self.llm = LLMRouter(self.db, self.settings.ollama_url, self.settings.ollama_model, self.settings.ollama_timeout)
+        from app.agent import Agent, Capstone
+        from app.research import Researcher
+
+        self.researcher = Researcher(self.db, self.llm)
+        self.agent = Agent(self)
+        self.capstone = Capstone(self)
+        self._agent_task: asyncio.Task | None = None
         self.lock = asyncio.Lock()
         self.coach = Coach(self)
         self.broker = self._load_broker()
@@ -179,6 +189,8 @@ class TradingEngine:
         if self.enable_market:
             self._market_task = asyncio.create_task(self._start_market(), name="engine-market-start")
         self._status_task = asyncio.create_task(self._status_loop(), name="engine-status")
+        if self.enable_market:
+            self._agent_task = asyncio.create_task(self.agent.loop(), name="agent-loop")
 
     async def _start_market(self) -> None:
         while self._running:
@@ -201,10 +213,10 @@ class TradingEngine:
 
     async def stop(self) -> None:
         self._running = False
-        for task in [self._status_task, self._market_task, *self._tasks]:
+        for task in [self._status_task, self._market_task, self._agent_task, *self._tasks]:
             if task and not task.done():
                 task.cancel()
-        for task in [self._status_task, self._market_task, *self._tasks]:
+        for task in [self._status_task, self._market_task, self._agent_task, *self._tasks]:
             if task:
                 try:
                     await task
@@ -238,6 +250,7 @@ class TradingEngine:
     async def refresh_ai_health(self) -> dict:
         try:
             self.ai_health = await asyncio.wait_for(self.ai.health(), 10)
+            self.llm.local_available = bool(self.ai_health.get("available"))
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -640,6 +653,90 @@ class TradingEngine:
         await self.hub.broadcast("account", account)
         await self.log("warning", f"Account reset to {self.broker.starting_cash:,.2f}")
         return account
+
+    # ------------------------------------------------------------------ portfolios (level 10)
+    async def apply_portfolio(self, weights: dict[str, float], invest_pct: float, fit_limits: bool = False) -> dict:
+        """Rebalance the paper account to `weights` × `invest_pct` of equity. Positions outside the portfolio are sold.
+        Portfolio positions don't get a stop-loss: their risk is handled by diversification and rebalancing."""
+        weights = {self.check_symbol(s): float(w) for s, w in weights.items() if float(w) > 0}
+        if not weights:
+            raise ValueError("The portfolio has no weights above zero.")
+        if not 0.05 <= invest_pct <= 1.0:
+            raise ValueError("Invest between 5% and 100% of the account.")
+        total = sum(weights.values())
+        weights = {s: w / total for s, w in weights.items()}
+        lim = self.broker.limits
+        need_pos = len(weights)
+        need_pct = max(weights.values()) * invest_pct
+        if need_pos > lim.max_open_positions or need_pct > lim.max_position_pct + 1e-9:
+            if not fit_limits:
+                raise RiskError(
+                    f"This portfolio needs room for {need_pos} positions and up to {need_pct * 100:.0f}% of the account in "
+                    f"one asset. Your safety net allows {lim.max_open_positions} positions and {lim.max_position_pct * 100:.0f}% "
+                    "per trade. Tick 'raise my limits to fit' or change them in your safety net.")
+            await self.update_risk({"max_open_positions": max(lim.max_open_positions, need_pos),
+                                    "max_position_pct": min(1.0, max(lim.max_position_pct, math.ceil(need_pct * 100) / 100))})
+        was = self.db.get_kv("portfolio")
+        fills = []
+        async with self.lock:
+            prices = self.prices()
+            missing = [s for s in weights if not prices.get(s)]
+            if missing:
+                raise ValueError(f"No live price yet for {', '.join(missing)}. Try again in a moment.")
+            equity = self.broker.equity(prices)
+            ts = time.time()
+            # Sell what isn't in the portfolio, or is more than 5% off its target, then buy to target.
+            for sym, pos in list(self.broker.positions.items()):
+                target = weights.get(sym, 0) * invest_pct * equity
+                value = pos.qty * prices.get(sym, pos.avg_price)
+                if target == 0 or abs(value - target) > 0.05 * target:
+                    fills.append(self.broker.close(sym, prices[sym] if sym in prices else pos.avg_price, ts, reason="rebalance"))
+            for sym, w in weights.items():
+                if sym in self.broker.positions:
+                    continue
+                target = w * invest_pct * equity
+                qty = min(target, self.broker.cash * 0.999) / prices[sym]
+                if qty * prices[sym] < 1:
+                    continue
+                fill = self.broker.open_long(sym, prices[sym], ts, strategy="portfolio", qty=qty, reason="rebalance")
+                self.broker.set_brackets(sym, None, None)
+                fills.append(fill)
+        recorded = [await self._record_fill(f) for f in fills]
+        self.db.set_kv("portfolio", {"weights": weights, "invest_pct": invest_pct, "applied_at": time.time()})
+        self.learn.record("portfolio_apply")
+        if isinstance(was, dict):
+            self.learn.record("portfolio_rebalance")
+        await self.log("info", f"Portfolio applied: {len(recorded)} trades, " +
+                       ", ".join(f"{s} {w * invest_pct * 100:.0f}%" for s, w in weights.items()))
+        notes = [n for n in (self._closed_note(s) for s in weights) if n]
+        return {"trades": recorded, "account": self.account(), "note": notes[0] if notes else None}
+
+    # ------------------------------------------------------------------ saved code strategies (level 9)
+    def custom_strategies(self) -> dict:
+        raw = self.db.get_kv("custom_strategies")
+        return raw if isinstance(raw, dict) else {}
+
+    def save_custom_strategy(self, name: str, code: str, symbol: str | None = None) -> dict:
+        name = " ".join(str(name).split())[:40]
+        if not name:
+            raise ValueError("Give your strategy a name.")
+        if "def positions" not in code:
+            raise ValueError("A strategy needs a positions(df) function.")
+        all_ = self.custom_strategies()
+        if name not in all_ and len(all_) >= 30:
+            raise ValueError("You can save up to 30 strategies. Delete one first.")
+        all_[name] = {"code": code, "symbol": symbol, "saved": time.time()}
+        self.db.set_kv("custom_strategies", all_)
+        self.learn.record("strategy_saved")
+        return all_
+
+    def delete_custom_strategy(self, name: str) -> dict:
+        all_ = self.custom_strategies()
+        if name not in all_:
+            raise KeyError(f"No saved strategy called '{name}'")
+        del all_[name]
+        self.db.set_kv("custom_strategies", all_)
+        return all_
 
     async def resume(self) -> dict:
         async with self.lock:

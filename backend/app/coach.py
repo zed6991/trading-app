@@ -191,8 +191,19 @@ class Coach:
     def learn(self) -> Learning:
         return self.engine.learn
 
+    def _cloud(self) -> bool:
+        llm = getattr(self.engine, "llm", None)
+        return bool(llm and llm.uses_cloud("coach"))
+
     def _ai_ready(self) -> bool:
-        return bool(self.engine.ai_health.get("available"))
+        return self._cloud() or bool(self.engine.ai_health.get("available"))
+
+    async def _ask(self, messages: list[dict], temperature: float) -> tuple[str, str]:
+        """(reply text, source). Uses the cloud model when it's switched on for the coach, else the local model."""
+        if self._cloud():
+            reply = await self.engine.llm.chat("coach", messages, temperature=temperature, max_tokens=800)
+            return reply["text"], reply["source"]
+        return await self.engine.ai._ask_model(messages, temperature=temperature), f"ollama:{self.engine.ai.model}"
 
     # ---------------------------------------------------------------- next step
     def next_step(self, review: dict | None = None) -> dict:
@@ -266,7 +277,7 @@ class Coach:
             worded = await self._reword_review(review)
             if worded:
                 review.update(worded)
-                review["source"] = f"ollama:{self.engine.ai.model}"
+                review["source"] = self.engine.llm.route("coach") if self._cloud() else f"ollama:{self.engine.ai.model}"
         review["generated_at"] = time.time()
         self.engine.db.set_kv(REVIEW_KEY, {"key": cache_key, "review": review})
         self.learn.record("coach_review")
@@ -287,8 +298,8 @@ class Coach:
         )
         user = f"Facts: {json.dumps(review['stats'], default=str)}\nDraft: {json.dumps(draft)}\nReturn the JSON now."
         try:
-            raw = _extract_json(await self.engine.ai._ask_model(
-                [{"role": "system", "content": system}, {"role": "user", "content": user}], temperature=0.3))
+            text, _ = await self._ask([{"role": "system", "content": system}, {"role": "user", "content": user}], 0.3)
+            raw = _extract_json(text)
             out = {
                 "headline": _trim_summary(raw.get("headline", "")),
                 "went_well": [_trim_summary(x) for x in (raw.get("went_well") or []) if str(x).strip()][:3],
@@ -412,14 +423,15 @@ class Coach:
                     msgs.append({"role": role, "content": text})
             msgs.append({"role": "user", "content": message})
             try:
-                raw = _extract_json(await self.engine.ai._ask_model(msgs, temperature=0.4))
+                text, source = await self._ask(msgs, 0.4)
+                raw = _extract_json(text)
                 answer = " ".join(str(raw.get("answer") or "").split(" "))[:MAX_ANSWER_CHARS].strip()
                 if not answer:
                     raise ValueError("empty answer")
                 lesson = _lesson_ref(raw.get("lesson_id") if isinstance(raw.get("lesson_id"), str) else None, level)
                 follow = [str(f).strip()[:120] for f in (raw.get("follow_ups") or []) if str(f).strip()][:3]
                 return {"answer": answer, "lesson": lesson if lesson and not lesson["locked"] else None,
-                        "follow_ups": follow, "source": f"ollama:{self.engine.ai.model}"}
+                        "follow_ups": follow, "source": source}
             except Exception as exc:  # noqa: BLE001 - fall back to the rule-based coach
                 logger.warning("Coach chat via %s failed (%s); using rules", self.engine.ai.model, exc)
         return await self.rule_answer(message, level)

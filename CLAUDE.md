@@ -8,10 +8,10 @@ matching topic is taught.
 
 ## The course (content in `backend/app/curriculum.py`, progress in `backend/app/learn.py`)
 
-Built levels: 1 how markets work → 2 risk first → 3 charts and classic signals → 4 returns and volatility →
-5 how assets move together → 6 edge or luck? → 7 testing strategies properly. `ROADMAP` lists levels 8-13 (Python,
-strategies in code, portfolios and factors, ML, LLM research, agents + capstone), shown as "coming soon". When you
-build one, move it from `ROADMAP` into `LEVELS` with lessons, challenges and glossary terms.
+All 13 levels are built: 1 how markets work → 2 risk first → 3 charts and classic signals → 4 returns and volatility →
+5 how assets move together → 6 edge or luck? → 7 testing strategies properly → 8 Python for quants → 9 your strategy
+in code → 10 portfolios and factors → 11 machine-learning signals → 12 LLMs as research analysts → 13 agents and the
+capstone. `ROADMAP` is for future levels (shown as "coming soon").
 
 A level is complete when every lesson quiz is answered correctly and every non-bonus challenge is done; that unlocks
 the next level. Level N's features are usable while on level N (frontend: `data-unlock="N"`, hidden until
@@ -43,7 +43,13 @@ toggling indicators, using the order ticket) go through `POST /api/learn/events`
   untaught words, account, recent trades and current screen, and must never answer buy/sell with a yes/no.
   Keep the offline (no Ollama) path working.
 - **Protect the user by default.** Conservative risk limits, auto-trading hidden until level 13 and opted in, no
-  implied guaranteed profit. This is paper trading.
+  implied guaranteed profit. This is paper trading. The agent proposes and the learner approves (auto mode is
+  opt-in at level 13); rules set trade sizes, the LLM may only flag concerns. Keep the kill switch working.
+- **AI is local first.** All LLM calls go through `app/llm.py` (`engine.llm.chat(task, ...)`): Ollama by default,
+  OpenRouter only for tasks the learner ticked, under their monthly cap, falling back to Ollama. Never send the key to
+  the browser. Learner and AI code only runs through `codelab.run_code` (sandboxed, time-limited).
+- **Check what the AI says.** Numbers an LLM produces must be verified against facts (`verify_extraction` for filings,
+  `numbers_match` for reviews and the capstone) or clearly flagged.
 - **Be honest about evidence.** Lab results compare against buy & hold and random traders, include costs, and say
   plainly when something looks like luck or overfitting.
 - **Keep the curriculum valid.** `backend/tests/test_learn.py` checks that every glossary link resolves, quiz

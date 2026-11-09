@@ -135,11 +135,18 @@ def parse_chart(payload: dict, interval: str, now: float | None = None) -> list[
     return [out[t] for t in sorted(out)]
 
 
-async def fetch_chart(client: httpx.AsyncClient | None, symbol: str, interval: str, range_: str) -> list[dict]:
+async def fetch_chart(client: httpx.AsyncClient | None, symbol: str, interval: str, range_: str,
+                      days: float | None = None) -> list[dict]:
+    """Yahoo chart data. With `days` (daily bars only) an explicit date range is used, because range=max makes
+    Yahoo silently switch to coarser bars."""
     if interval not in INTERVALS:
         raise ValueError(f"Stocks support these timeframes: {', '.join(INTERVALS)}")
-    params = {"interval": INTERVALS[interval][0], "range": range_, "includePrePost": "false",
-              "events": "div,splits"}
+    params = {"interval": INTERVALS[interval][0], "includePrePost": "false", "events": "div,splits"}
+    if days is not None and interval == "1d":
+        now = int(time.time())
+        params.update({"period1": max(0, now - int(days * 86400)), "period2": now + 86400})
+    else:
+        params["range"] = range_
     own = client is None
     if own:
         client = httpx.AsyncClient(timeout=15.0, headers=HEADERS)
@@ -156,7 +163,8 @@ async def fetch_chart(client: httpx.AsyncClient | None, symbol: str, interval: s
 async def fetch_stock_history(symbol: str, interval: str, bars: int) -> list[dict]:
     """The most recent `bars` candles for a US stock/ETF (as many as Yahoo allows for that timeframe)."""
     bars = max(1, int(bars))
-    candles = await fetch_chart(None, symbol, interval, _pick_range(interval, bars))
+    days = bars * 365 / 252 + 10 if interval == "1d" else None
+    candles = await fetch_chart(None, symbol, interval, _pick_range(interval, bars), days=days)
     return candles[-bars:]
 
 

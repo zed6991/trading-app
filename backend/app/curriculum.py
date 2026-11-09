@@ -1,8 +1,8 @@
 """Course content: "Zero to AI-powered quant trader".
 
-Levels 1-7 are built (markets, risk, charts, statistics, correlation, edge-or-luck, proper backtesting). Levels 8-13
-(Python, strategies in code, portfolios and factors, machine learning, LLM research, agents) are listed in ROADMAP
-and shown as "coming soon" until they're built.
+All 13 levels are built: markets, risk, charts, statistics, correlation, edge-or-luck, proper backtesting, Python,
+strategies in code, portfolios and factors, machine learning, LLM research, and agents with a capstone. ROADMAP holds
+any future levels (shown as "coming soon").
 
 Text fields may contain glossary links written as [[slug]] or [[slug|shown text]]. Every term a lesson or the UI uses
 must be in GLOSSARY, with `level` = the level whose lessons teach it.
@@ -12,7 +12,8 @@ from typing import Any
 COURSE_TITLE = "Zero to AI-powered quant trader"
 COURSE_OUTLINE = ("1 markets and orders, 2 risk and position sizing, 3 charts and classic signals, "
                   "4 returns and volatility, 5 correlation, beta and diversification, 6 edge or luck, "
-                  "7 testing strategies properly")
+                  "7 testing strategies properly, 8 Python for quants, 9 strategies in code, 10 portfolios and factors, "
+                  "11 machine-learning signals, 12 LLMs as research analysts, 13 agents and the capstone")
 
 
 def _g(slug: str, term: str, level: int, short: str, more: str = "", aliases: list[str] | None = None) -> dict:
@@ -235,10 +236,102 @@ GLOSSARY: list[dict[str, Any]] = [
        "", ["test period", "oos", "unseen data"]),
     _g("walk-forward", "Walk-forward test", 7, "Tune on the past, then test once on the period right after it.",
        "If results collapse on the test part, the strategy was overfit.", ["walk forward", "walk-forward"]),
-    _g("auto-trading", "Auto-trading", 7, "Letting the app place trades whenever your strategy signals.",
-       "Taught properly in Level 13. Your safety net still applies to every automatic trade.", ["auto trading", "auto"]),
-    _g("ai-filter", "AI filter", 7, "Auto-trading only takes a buy signal if the AI analyst also likes it.",
-       "Taught properly in Levels 12 and 13."),
+    # Level 8: Python for quants
+    _g("python", "Python", 8, "The programming language most quants use, because it's readable and has great data tools.",
+       "You don't need to be a programmer. A few lines of Python can test an idea a spreadsheet can't."),
+    _g("pandas", "pandas", 8, "The Python library for tables of data, like prices over time.", "", ["pd"]),
+    _g("dataframe", "DataFrame", 8, "A pandas table: rows (here, one per day) and named columns (open, close, …).",
+       "qp.prices('SPY') gives you one.", ["data frame", "df"]),
+    _g("series", "Series", 8, "One column of a DataFrame: a list of values with dates attached.", "spy['close'] is a Series."),
+    _g("rolling-window", "Rolling window", 8, "A calculation over the last N days, repeated for every day.",
+       "returns.rolling(60).std() is the volatility of the last 60 days' returns, recalculated each day.", ["rolling"]),
+    _g("pair-programmer", "AI pair-programmer", 8, "An AI that reads your code with you: explains errors, gives hints or fixes it.",
+       "Use it to learn faster, not to skip understanding. In exercises it only gives hints.", ["pair programmer", "ai helper"]),
+    _g("sandbox", "Sandbox", 8, "A locked room for running code: here it has no internet and can't read your files.",
+       "So it's safe to run code an AI wrote, or code you're unsure about."),
+
+    # Level 9: your strategy in code
+    _g("signal-function", "Signal function", 9, "Your strategy as code: a function that says 1 (hold) or 0 (cash) for every day.",
+       "In the Code Lab it's called positions(df).", ["positions function", "positions(df)"]),
+    _g("shift", "Shift", 9, "Moving a series one or more days later, e.g. pos.shift(1), so today's decision trades tomorrow.",
+       "Forgetting the shift is the most common way to accidentally cheat in a backtest.", ["shift(1)"]),
+    _g("vectorised-backtest", "Vectorised backtest", 9, "A backtest done with whole columns at once: returns × yesterday's position.",
+       "Fast and simple, which makes it great for testing many ideas.", ["vectorized backtest"]),
+    _g("turnover", "Turnover", 9, "How much you trade: here, how often the position changes, or the share of a portfolio traded.",
+       "More turnover means more costs."),
+
+    # Level 10: portfolios and factors
+    _g("equal-weight", "Equal weight", 10, "Putting the same amount in every asset.", "Simple and surprisingly hard to beat."),
+    _g("inverse-volatility", "Inverse volatility", 10, "Weighting each asset by 1 ÷ its volatility, so calmer assets get more.",
+       "", ["inverse vol"]),
+    _g("risk-parity", "Risk parity", 10, "Weights chosen so every asset adds the same amount of risk.",
+       "Bonds get much more money than stocks, because each dollar of bonds is less risky."),
+    _g("minimum-variance", "Minimum variance", 10, "The mix with the lowest volatility the past data allows.", "", ["min variance"]),
+    _g("mean-variance", "Mean-variance", 10, "Choosing weights from estimated returns and risk. Here: the max-Sharpe "
+       "version, the best return per unit of risk.",
+       "Famous and fragile: small errors in the return estimates swing the weights wildly.", ["max sharpe", "markowitz"]),
+    _g("volatility-targeting", "Volatility targeting", 10, "Holding less when markets are jumpy and more when they're calm, "
+       "to keep risk near a target.", "", ["vol targeting", "target volatility"]),
+    _g("kelly", "Kelly criterion", 10, "A formula for the bet size that grows money fastest if you knew the true odds: "
+       "(average return above the cash rate) ÷ variance.",
+       "You never do, and full Kelly has brutal drawdowns, so practitioners use half Kelly or less.",
+       ["half kelly", "full kelly", "kelly fraction"]),
+    _g("leverage", "Leverage", 10, "Investing more than your own money by borrowing. 2x leverage doubles gains and losses.",
+       "This app never borrows; the Kelly chart only shows what leverage would have done."),
+    _g("alpha", "Alpha", 10, "Return that the market and other factors don't explain: the part that might be skill.",
+       "Check its t-stat: alpha with t below 2 could easily be luck."),
+    _g("t-stat", "t-stat", 10, "How many standard errors a number is from zero. About 2 or more means 'probably not luck'.",
+       "", ["t-statistic", "t"]),
+    _g("r-squared", "R²", 10, "The share of the ups and downs a model explains, from 0% to 100%.", "", ["r2", "r squared"]),
+
+    # Level 11: machine-learning signals
+    _g("machine-learning", "Machine learning", 11, "Letting an algorithm find patterns in examples instead of writing the rules yourself.",
+       "", ["ml", "machine-learning model"]),
+    _g("feature", "Feature", 11, "An input the model uses, like last month's return or volatility.", "", ["features"]),
+    _g("label", "Label", 11, "The answer the model learns to predict, e.g. 'was the price higher 5 days later?'", "", ["labels", "target"]),
+    _g("logistic-regression", "Logistic regression", 11, "A simple model that adds up weighted features to give a probability.",
+       "", ["logistic"]),
+    _g("gradient-boosting", "Gradient boosting", 11, "A flexible model built from many small decision trees, each fixing the last one's mistakes.",
+       "Powerful, which also makes it good at memorising noise.", ["boosting", "gradient boosted trees"]),
+    _g("train-test-split", "Train/test split", 11, "Training on one part of the data and judging on another the model never saw.",
+       "For markets, split by time: train on the past, test on the future.", ["time split", "shuffled split"]),
+    _g("leakage", "Leakage", 11, "When information from the future sneaks into training. Results look great and are fake.",
+       "", ["data leakage", "leak", "leaky"]),
+    _g("accuracy", "Accuracy", 11, "The share of predictions that were right.",
+       "Compare with the baseline: always guessing 'up' is right about 55% of the time for stocks."),
+    _g("auc", "AUC", 11, "How well the model ranks up days above down days. 0.5 = no better than a coin, 1 = perfect.", ""),
+    _g("feature-importance", "Feature importance", 11, "How much the model's accuracy drops when one feature is scrambled.",
+       "", ["importance"]),
+
+    # Level 12: LLMs as research analysts
+    _g("llm", "LLM", 12, "Large language model: an AI that reads and writes text, like the one in this app.",
+       "Great at summarising; also capable of confidently making things up.", ["large language model", "language model"]),
+    _g("sec-filing", "SEC filing", 12, "A report US companies must publish: 10-K (yearly, including the 4th quarter), "
+       "10-Q (each of the first three quarters), 8-K (news, including earnings releases).",
+       "They're free on SEC EDGAR.", ["10-k", "10-q", "8-k", "filing", "filings", "edgar"]),
+    _g("structured-extraction", "Structured extraction", 12, "Turning a document into fixed fields (numbers, scores, lists) a program can use.",
+       "", ["extraction"]),
+    _g("sentiment", "Sentiment", 12, "How positive or negative a piece of text is, scored here from −1 to +1.", "", ["sentiment score"]),
+    _g("hallucination", "Hallucination", 12, "When an AI states something that isn't true or isn't in its source.",
+       "This app checks every quoted number against the filing and flags what it can't find.", ["hallucinations", "hallucinate"]),
+    _g("training-data-leakage", "Training-data leakage", 12, "An LLM already knowing what happened after a date, because it learned from later text.",
+       "It makes backtests of AI signals look far better than they'll ever be live.", ["knows the future"]),
+    _g("event-study", "Event study", 12, "Measuring how prices moved around a type of event, like earnings releases.", ""),
+
+    # Level 13: agents and the capstone
+    _g("agent", "Agent", 13, "A program that runs steps on its own (research, signal, risk check) and proposes or takes actions.",
+       "", ["agents", "trading agent"]),
+    _g("human-in-the-loop", "Human in the loop", 13, "A person approves each action before it happens.",
+       "The safest way to start any automated system.", ["approve mode", "approval"]),
+    _g("proposal", "Proposal", 13, "A trade the agent suggests, with its reasons, waiting for your yes or no.", "", ["proposals"]),
+    _g("kill-switch", "Kill switch", 13, "One button that stops all automation and cancels waiting orders.", "", ["kill"]),
+    _g("audit-log", "Audit log", 13, "A record of every step the agent took and why, so you can check it later.", "", ["log", "run log"]),
+    _g("trading-plan", "Trading plan", 13, "Your written rules: what you trade, when you buy and sell, how much you risk, and when you stop.",
+       "Decide before you trade; review weekly, not mid-trade.", ["plan"]),
+    _g("auto-trading", "Auto-trading", 13, "Letting the app place trades whenever your strategy signals.",
+       "Your safety net still applies to every automatic trade.", ["auto trading", "auto", "auto mode"]),
+    _g("ai-filter", "AI filter", 13, "Auto-trading only takes a buy signal if the AI analyst also likes it.",
+       "A second opinion, not a guarantee."),
 ]
 GLOSSARY_BY_SLUG = {g["slug"]: g for g in GLOSSARY}
 
@@ -1004,27 +1097,553 @@ LEVELS: list[dict[str, Any]] = [
                 bonus=True),
         ],
     },
+    {
+        "n": 8, "title": "Python for quants", "phase": "Code",
+        "summary": "Load prices with pandas, compute returns, volatility and drawdowns in code, and work with an AI pair-programmer.",
+        "unlocks": ["Code Lab: run Python in a safe sandbox", "Python exercises with automatic checking", "AI pair-programmer"],
+        "lessons": [
+            {
+                "id": "l8-why-code", "title": "Why quants write code", "minutes": 3,
+                "cards": [
+                    _card("Ideas you can repeat",
+                          "Everything the Lab does, you can do yourself in a few lines of [[python|Python]]. Code makes an "
+                          "idea exact and repeatable: run it on 16 assets, or 1,000 settings, in seconds.\n\nIt's also how "
+                          "you test ideas nobody built a button for."),
+                    _card("Your tools",
+                          "[[pandas]] handles tables of prices. The Code Lab gives you a helper: qp.prices('SPY') loads "
+                          "five years of daily prices, qp.chart(...) draws a line chart and qp.table(...) shows a table.\n\n"
+                          "Code runs in a [[sandbox]]: no internet, no access to your files."),
+                    _card("An AI pair-programmer",
+                          "Stuck? The [[pair-programmer|AI pair-programmer]] explains errors in plain English, gives hints, "
+                          "or fixes code outside the exercises.\n\nAI code can be wrong, and quietly wrong is the "
+                          "dangerous kind. Read what it gives you, and test it before you trust it."),
+                ],
+                "takeaway": "Code makes ideas exact, repeatable and testable at scale. Use AI to learn faster, then check its work.",
+                "quiz": [
+                    _q("Why do quants write code instead of clicking through charts?",
+                       ["It makes ideas exact and repeatable across many assets", "Code makes strategies profitable",
+                        "Charts are banned"], 0, "Code can't make a bad idea good, but it tests ideas quickly and exactly."),
+                    _q("The AI pair-programmer hands you code. What next?",
+                       ["Read it and test it before trusting it", "Use it as is: AI is always right",
+                        "Run it with real money"], 0, "AI code can be subtly wrong. Testing it is part of the job."),
+                ],
+            },
+            {
+                "id": "l8-dataframes", "title": "DataFrames and Series", "minutes": 4,
+                "cards": [
+                    _card("A table of prices",
+                          "spy = qp.prices('SPY') gives a [[dataframe|DataFrame]]: one row per trading day and columns open, "
+                          "high, low, close and volume.\n\nspy.tail() shows the last 5 rows. spy['close'] picks one column: "
+                          "a [[series|Series]] of closing prices with dates attached."),
+                    _card("Picking values",
+                          "spy['close'].iloc[-1] is the last close (-1 means 'last'). spy['close'].max() is the highest "
+                          "close. spy.loc['2025-01-02'] is one day's row.\n\nMost quant code is just these few moves, "
+                          "repeated."),
+                    _card("Whole columns at once",
+                          "You rarely loop day by day. spy['close'] / 100 divides every value at once, and two Series line "
+                          "up by date automatically.\n\nThat's why pandas is fast, and why a backtest can be one line."),
+                ],
+                "takeaway": "A DataFrame is a table of days; a Series is one column. Work on whole columns at once.",
+                "quiz": [
+                    _q("What does spy['close'] give you?", ["A Series of closing prices with dates", "One number",
+                                                             "The whole table"], 0, "Selecting one column gives a Series."),
+                    _q("Which gets the most recent close?", ["spy['close'].iloc[-1]", "spy['close'].iloc[0]",
+                                                              "spy.head()"], 0, "-1 means the last row; 0 is the first."),
+                ],
+            },
+            {
+                "id": "l8-returns-code", "title": "Returns, volatility and drawdowns in code", "minutes": 4,
+                "cards": [
+                    _card("Returns",
+                          "close.pct_change() is the daily [[return]] for every day at once: today ÷ yesterday − 1. The "
+                          "first day is empty (NaN) because there's no yesterday."),
+                    _card("Volatility",
+                          "returns.std() is the daily [[standard-deviation|standard deviation]]. Times np.sqrt(252) makes "
+                          "it yearly, exactly like Level 4.\n\nA [[rolling-window|rolling window]] repeats it for every "
+                          "day: returns.rolling(60).std() shows how volatility itself changes over time."),
+                    _card("Drawdown",
+                          "close.cummax() is the highest price so far. 1 − close / close.cummax() is how far below that "
+                          "peak you are on each day. Its max() is the max [[drawdown]] of holding the asset. For a "
+                          "strategy, do the same with its growth curve instead of the price."),
+                ],
+                "takeaway": "pct_change for returns, std × √252 for yearly volatility, cummax for drawdowns, rolling for 'over time'.",
+                "quiz": [
+                    _q("Which line computes yearly volatility for a stock?",
+                       ["returns.std() * np.sqrt(252)", "returns.mean() * 252", "close.max() - close.min()"], 0,
+                       "Standard deviation of daily returns, scaled by √252."),
+                    _q("What does close.rolling(20).mean() give you?", ["A 20-day moving average for every day",
+                                                                        "The average of the first 20 days only",
+                                                                        "The last 20 closes"], 0,
+                       "Rolling repeats the calculation over the last 20 days, every day."),
+                    _q("Why is the first value of pct_change() empty?", ["There's no previous day to compare with",
+                                                                          "A bug", "Markets were closed"], 0,
+                       "A return needs yesterday's price."),
+                ],
+            },
+        ],
+        "challenges": [
+            _ch("first-code", "Run your first code", "Open Code, pick any exercise and press Run.", "code_run"),
+            _ch("py-exercises", "Pass the 5 Python exercises",
+                "In Code, solve each Level 8 exercise and press Check. They tick off as they pass.", "ex8", 5, distinct=True),
+            _ch("ask-pair", "Ask the AI pair-programmer", "In Code, press Explain, Hint or Ask on any code.", "code_assist"),
+        ],
+    },
+    {
+        "n": 9, "title": "Your strategy in code", "phase": "Code",
+        "summary": "Write a strategy as a signal function, backtest it without look-ahead, include costs, and test it out-of-sample.",
+        "unlocks": ["Code Lab strategy mode: backtest, out-of-sample and luck test for your own code",
+                    "Saved strategies the agent can use"],
+        "lessons": [
+            {
+                "id": "l9-signal-functions", "title": "A strategy is a function", "minutes": 3,
+                "cards": [
+                    _card("From rules to code",
+                          "A [[signal-function|signal function]] takes the price table and returns 1 (hold) or 0 (cash) for "
+                          "every day. 'Hold when the close is above its 50-day average' becomes one line: "
+                          "(close > close.rolling(50).mean()).astype(int)."),
+                    _card("Any idea you can write",
+                          "Momentum, mean reversion, volatility filters, combinations: if you can describe it with past "
+                          "prices, you can write it. The app runs your function, then does the backtest for you, the "
+                          "same way it tests built-in strategies."),
+                ],
+                "takeaway": "Your strategy is a function from past prices to 1 or 0 for each day.",
+                "quiz": [
+                    _q("What should positions(df) return?", ["1 (hold) or 0 (cash) for each day", "Tomorrow's price",
+                                                             "A single buy price"], 0,
+                       "One position per day; the app turns changes into trades."),
+                    _q("'Hold while RSI is below 70' is:", ["A rule you can write as a signal function",
+                                                            "Impossible in code", "Guaranteed profit"], 0,
+                       "Any rule using past prices can be coded."),
+                ],
+            },
+            {
+                "id": "l9-shift", "title": "Don't trade on a close you don't know yet", "minutes": 4,
+                "cards": [
+                    _card("Today decides, tomorrow trades",
+                          "Your signal uses today's close, which you only know at the end of the day. So it can only "
+                          "trade tomorrow. In code: strategy returns = returns × positions.[[shift]](1).\n\n(Some "
+                          "professionals trade in the closing auction using a signal from a few minutes earlier, but "
+                          "that's an approximation with its own costs. Next day is the safe assumption.)"),
+                    _card("The easiest way to cheat by accident",
+                          "Forget the shift, or use close.shift(-1) (tomorrow's price), and the backtest earns returns "
+                          "it could never have had: [[look-ahead-bias|look-ahead bias]]. A strategy 'making' 4,000% is "
+                          "usually this."),
+                    _card("The app checks for you",
+                          "When you test a strategy, the app runs your function on the full history and again on "
+                          "shorter histories. If past positions change when future data is added, your code peeked at "
+                          "the future, and the result is flagged."),
+                ],
+                "takeaway": "Shift positions by one day. If more future data changes past signals, the strategy is cheating.",
+                "quiz": [
+                    _q("Why multiply returns by positions.shift(1) instead of positions?",
+                       ["Today's signal can only trade tomorrow", "It makes returns bigger", "pandas requires it"], 0,
+                       "You learn today's close at the end of today."),
+                    _q("Your backtest shows +4,000% in 5 years. What do you check first?",
+                       ["Look-ahead bias in the code", "Raising the position size", "Telling your friends"], 0,
+                       "Results that good are almost always a bug or a peek at the future."),
+                ],
+            },
+            {
+                "id": "l9-vectorised", "title": "A backtest in three lines", "minutes": 4,
+                "cards": [
+                    _card("Vectorised backtests",
+                          "held = positions.shift(1). strat = returns × held. growth = (1 + strat).cumprod(). That's a "
+                          "complete [[vectorised-backtest|vectorised backtest]]: whole columns at once, no loops."),
+                    _card("Pay for trading",
+                          "Each change in position is a trade. trades = held.diff().abs() is 1 on days you buy or sell. "
+                          "Subtract 0.1% × trades and you have returns after [[costs]]. More [[turnover]], more cost."),
+                    _card("Then test it honestly",
+                          "Strategy mode runs your code on the first 70% and the unseen last 30%, compares both with buy "
+                          "& hold, and runs the luck test from Level 6. The same discipline as Level 7, for your own ideas."),
+                ],
+                "takeaway": "returns × yesterday's position, minus costs per trade, then out-of-sample and luck tests.",
+                "quiz": [
+                    _q("trades = held.diff().abs(). What is it on a day you buy?", ["1", "0", "-1"], 0,
+                       "The position changes from 0 to 1, so the absolute difference is 1."),
+                    _q("Which strategy pays the most in costs?", ["One that changes position every few days",
+                                                                  "One that holds all year", "Buy & hold"], 0,
+                       "Costs are paid on every change."),
+                ],
+            },
+        ],
+        "challenges": [
+            _ch("strategy-exercises", "Pass the 3 strategy exercises",
+                "In Code, solve the Level 9 exercises (signal, shift, costs).", "ex9", 3, distinct=True),
+            _ch("custom-backtest", "Backtest your own strategy",
+                "In Code → My strategy, edit positions(df) and press 'Test strategy'.", "custom_backtest"),
+            _ch("no-lookahead", "Pass the look-ahead check",
+                "Test a strategy that only uses past prices: the look-ahead check must come back clean.", "lookahead_clean"),
+            _ch("save-strategy", "Save a strategy", "In Code → My strategy, give it a name and press Save.",
+                "strategy_saved", bonus=True),
+            _ch("custom-oos", "Beat buy & hold on unseen data with your own code",
+                "Find a strategy whose out-of-sample result beats buy & hold.", "custom_oos_beat", bonus=True),
+        ],
+    },
+    {
+        "n": 10, "title": "Portfolios and factors", "phase": "Portfolios and risk",
+        "summary": "Weighting schemes tested out-of-sample, volatility targeting, the Kelly criterion, and what really drives your returns.",
+        "unlocks": ["Lab → Portfolio builder", "Lab → Factor breakdown", "Investing a portfolio in your paper account"],
+        "lessons": [
+            {
+                "id": "l10-weighting", "title": "How much of each?", "minutes": 4,
+                "cards": [
+                    _card("Simple schemes",
+                          "[[equal-weight|Equal weight]]: the same in each. [[inverse-volatility|Inverse volatility]]: "
+                          "more in calmer assets. [[risk-parity|Risk parity]]: each asset adds the same risk, so a bond "
+                          "ETF gets far more money than Nvidia."),
+                    _card("Optimised schemes",
+                          "[[minimum-variance|Minimum variance]] finds the calmest mix the past allows. [[mean-variance|"
+                          "Mean-variance]] (max Sharpe) also uses past returns to chase the best return per unit of risk."),
+                    _card("Why the clever one often loses",
+                          "Past returns are very noisy estimates of future ones. Mean-variance leans hard on them, so it "
+                          "often looks best on the data it was fitted to and disappoints afterwards. The Lab fits every "
+                          "scheme on the first half and judges it on the second, so you can watch this happen."),
+                ],
+                "takeaway": "Simple and risk-based weights are robust; return-chasing optimisers look best in hindsight.",
+                "quiz": [
+                    _q("In risk parity, which usually gets the most money?", ["Low-volatility assets like bond ETFs",
+                                                                              "The most volatile stock",
+                                                                              "Everything equally"], 0,
+                       "Each asset adds equal risk, so calmer assets need more money to do so."),
+                    _q("Why is mean-variance fragile?", ["It relies on past returns, which are noisy guesses of the future",
+                                                         "It ignores volatility", "It's too simple"], 0,
+                       "Small errors in expected returns swing the weights a lot."),
+                ],
+            },
+            {
+                "id": "l10-sizing", "title": "Volatility targeting and Kelly", "minutes": 4,
+                "cards": [
+                    _card("Steady risk",
+                          "[[volatility-targeting|Volatility targeting]] holds less when the last few weeks were jumpy and "
+                          "more when they were calm, aiming for, say, 10% a year. It can't predict, but it reacts, which "
+                          "often softens crashes."),
+                    _card("The Kelly criterion",
+                          "[[kelly|Kelly]] gives the bet size that grows money fastest if you knew the true average return "
+                          "and volatility: fraction = (average return − the interest rate on cash) ÷ variance. On stocks it often says "
+                          "'borrow and bet 2-4x' ([[leverage]]). The Lab ignores the cash rate to keep it simple, which "
+                          "makes its Kelly numbers a little too big."),
+                    _card("Why pros bet half Kelly or less",
+                          "You never know the true numbers, and over-betting is far worse than under-betting. Full Kelly's "
+                          "drawdowns are brutal; half Kelly gives up a little growth for much smaller falls. The Lab shows "
+                          "1x, half and full Kelly on real history."),
+                ],
+                "takeaway": "Target steady risk; size with a fraction of Kelly, never more.",
+                "quiz": [
+                    _q("Volatility targeting after a very jumpy month will:", ["Reduce exposure", "Increase exposure",
+                                                                               "Do nothing"], 0,
+                       "Higher recent volatility means holding less to keep risk on target."),
+                    _q("Why use half Kelly?", ["Our estimates are uncertain, and over-betting is very costly",
+                                               "Half Kelly grows faster", "Kelly is illegal"], 0,
+                       "It trades a little growth for much smaller drawdowns."),
+                ],
+            },
+            {
+                "id": "l10-factors", "title": "What's really driving your returns?", "minutes": 4,
+                "cards": [
+                    _card("Beyond the market",
+                          "Besides the market, a few [[factor|factors]] explain a lot of stock returns: size (small vs big "
+                          "companies), value (cheap vs expensive), momentum (recent winners), quality (steady profits) and "
+                          "low volatility. ETFs like IWM, VLUE and MTUM track them."),
+                    _card("A factor breakdown",
+                          "Regress daily returns on the factors and you get a beta for each, plus [[r-squared|R²]]: how much "
+                          "they explain. What's left over is [[alpha]], the part that might be skill."),
+                    _card("Is the alpha real?",
+                          "Check alpha's [[t-stat]]: below about 2, it could easily be luck. And remember survivorship "
+                          "bias: Nvidia's huge alpha here is partly because we picked it knowing it won."),
+                ],
+                "takeaway": "Most returns come from known factors. Real alpha is what's left, and it needs a t-stat around 2+.",
+                "quiz": [
+                    _q("A fund's returns are 95% explained by the market factor (R² 0.95). It's mostly:",
+                       ["An expensive way to hold the market", "Pure skill", "Unrelated to stocks"], 0,
+                       "If the market explains almost everything, there's little room for skill."),
+                    _q("Alpha of +6% a year with a t-stat of 0.8 means:", ["It could easily be luck", "Proven skill",
+                                                                           "A guaranteed 6% next year"], 0,
+                       "You'd want a t-stat around 2 or more."),
+                ],
+            },
+        ],
+        "challenges": [
+            _ch("compare-schemes", "Compare weighting schemes out-of-sample",
+                "Open Lab → Portfolio, pick 4+ assets and run the comparison.", "portfolio_compare"),
+            _ch("factor-breakdown", "Run a factor breakdown", "In Lab → Factors, analyse any stock (try NVDA, then KO).",
+                "factor_run"),
+            _ch("invest-portfolio", "Invest a portfolio in your paper account",
+                "In Lab → Portfolio, press 'Invest this portfolio' on the scheme you prefer.", "portfolio_apply"),
+            _ch("kelly", "Look at Kelly sizing", "In Lab → Portfolio, run the Kelly check on one asset.", "kelly_run",
+                bonus=True),
+            _ch("vol-target", "Try volatility targeting", "Run the portfolio comparison with a target volatility.",
+                "vol_target", bonus=True),
+        ],
+    },
+    {
+        "n": 11, "title": "Machine-learning signals", "phase": "Machine learning",
+        "summary": "Features and labels, splitting by time, leakage, and why accuracy isn't profit.",
+        "unlocks": ["Lab → ML: train logistic regression and gradient boosting on any asset"],
+        "lessons": [
+            {
+                "id": "l11-ml-basics", "title": "Learning from examples", "minutes": 3,
+                "cards": [
+                    _card("Rules from data",
+                          "In [[machine-learning|machine learning]] you don't write the rule; you show examples. Each "
+                          "day is one example with [[feature|features]] (last month's return, volatility, RSI…) and a "
+                          "[[label]] (was the price higher 5 days later?)."),
+                    _card("Two kinds of model",
+                          "[[logistic-regression|Logistic regression]] adds up weighted features: simple and hard to "
+                          "fool yourself with. [[gradient-boosting|Gradient boosting]] builds many small decision trees: "
+                          "flexible enough to find real patterns, and to memorise noise."),
+                ],
+                "takeaway": "Features in, label out. Flexible models find more patterns, real or not.",
+                "quiz": [
+                    _q("'Return over the last 20 days' is a:", ["Feature", "Label", "Model"], 0,
+                       "It's an input known on the day of the prediction."),
+                    _q("Why can a very flexible model be dangerous here?", ["It can memorise noise in the past",
+                                                                            "It's too slow", "It can't learn"], 0,
+                       "Markets are noisy; memorised noise doesn't repeat."),
+                ],
+            },
+            {
+                "id": "l11-splits", "title": "Splitting by time, and leakage", "minutes": 4,
+                "cards": [
+                    _card("Train on the past, test on the future",
+                          "A [[train-test-split|train/test split]] keeps some data hidden for judging. In markets, split "
+                          "by time: train on earlier years, test on later ones. That's how you'd really use it."),
+                    _card("Why shuffling cheats",
+                          "Shuffle days randomly and the test days sit right next to training days. With a 5-day label, "
+                          "neighbouring days share most of their answer, so the model has effectively seen the test."),
+                    _card("Leakage",
+                          "[[leakage|Leakage]] is any feature containing information from after the prediction. The Lab "
+                          "lets you add one on purpose: accuracy jumps to ~100%. Any result that looks that good should "
+                          "make you hunt for a leak."),
+                ],
+                "takeaway": "Split by time, leave a gap, and treat amazing results as a sign of leakage.",
+                "quiz": [
+                    _q("Why not shuffle days into train and test sets?", ["Neighbouring days leak answers into training",
+                                                                          "It's slower", "pandas can't"], 0,
+                       "Time-ordered data needs time-ordered splits."),
+                    _q("Your model scores 97% accuracy on daily stock direction. Most likely:", ["Leakage",
+                                                                                                 "A breakthrough",
+                                                                                                 "Normal"], 0,
+                       "Real signals rarely get far above 55%."),
+                ],
+            },
+            {
+                "id": "l11-accuracy", "title": "Accuracy isn't profit", "minutes": 4,
+                "cards": [
+                    _card("Beat the baseline first",
+                          "Stocks rise on about 55% of days, so always guessing 'up' scores 55% [[accuracy]]. A model at "
+                          "56% has barely learned anything. [[auc|AUC]] (0.5 = coin flip) is another honest check."),
+                    _card("Then beat buy & hold after costs",
+                          "Even a real edge must pay for trading. The Lab turns predictions into a strategy (hold when it "
+                          "says up) with costs, and compares with buy & hold over the test period."),
+                    _card("What it learned",
+                          "[[feature-importance|Feature importance]] shows which inputs mattered. If 'day of the week' "
+                          "matters most, be suspicious. And compare train vs test accuracy: a big gap means overfitting."),
+                ],
+                "takeaway": "Compare with the 'always up' baseline, then with buy & hold after costs. Most models fail, honestly.",
+                "quiz": [
+                    _q("Baseline (always 'up') is 56%. Your model is 57%. That's:", ["Barely better than guessing",
+                                                                                      "A strong edge",
+                                                                                      "Worse than guessing"], 0,
+                       "One point over the baseline is within noise."),
+                    _q("Train accuracy 80%, test accuracy 52%. This means:", ["Overfitting", "A great model",
+                                                                              "Leakage"], 0,
+                       "It memorised the training data and didn't generalise."),
+                ],
+            },
+        ],
+        "challenges": [
+            _ch("ml-train", "Train a model", "Open Lab → ML, pick an asset and press Train.", "ml_train"),
+            _ch("ml-shuffle", "See what a shuffled split does", "In Lab → ML, tick 'Shuffle the split' and train again.",
+                "ml_shuffle"),
+            _ch("ml-leak", "Catch a leak", "In Lab → ML, tick 'Add a leaky feature' and see the accuracy.", "ml_leak"),
+            _ch("ml-beat", "Beat buy & hold on the test period after costs",
+                "Find a model and settings whose honest (time-split) strategy beats buy & hold.", "ml_beat_hold", bonus=True),
+        ],
+    },
+    {
+        "n": 12, "title": "LLMs as research analysts", "phase": "LLMs and agents",
+        "summary": "Turn SEC filings and news into checked data, catch hallucinations, and avoid the 'AI already knows the future' trap.",
+        "unlocks": ["Research: filings from SEC EDGAR, AI summaries with number checks, news sentiment, event studies"],
+        "lessons": [
+            {
+                "id": "l12-filings", "title": "Reading what companies publish", "minutes": 3,
+                "cards": [
+                    _card("SEC filings",
+                          "US companies must publish [[sec-filing|SEC filings]]: a 10-K every year, a 10-Q for each of the "
+                          "first three quarters (the 10-K covers the fourth), and an 8-K for news, including the earnings "
+                          "press release. They're free on SEC EDGAR."),
+                    _card("An AI that reads for you",
+                          "An [[llm|LLM]] can read a 10-page earnings release in seconds and pull out revenue, profit, "
+                          "guidance and risks. That's work analysts used to do by hand for every company."),
+                ],
+                "takeaway": "Filings are the primary source. LLMs make reading them at scale cheap.",
+                "quiz": [
+                    _q("Where's a company's quarterly earnings press release?", ["An 8-K filing", "A 10-K only",
+                                                                                 "Nowhere public"], 0,
+                       "Earnings releases are filed as 8-Ks (item 2.02)."),
+                    _q("What's the main thing an LLM speeds up here?", ["Reading and summarising many documents",
+                                                                        "Predicting prices", "Placing trades"], 0,
+                       "It reads; you still decide what it means."),
+                ],
+            },
+            {
+                "id": "l12-checking", "title": "From text to data, checked", "minutes": 4,
+                "cards": [
+                    _card("Structured extraction",
+                          "[[structured-extraction|Structured extraction]] asks the AI for fixed fields: a summary, a "
+                          "[[sentiment]] score from −1 to +1, key numbers, risks and guidance. Fixed fields are something "
+                          "a program can count and test."),
+                    _card("Hallucinations",
+                          "LLMs sometimes state things that aren't in the source: [[hallucination|hallucinations]]. So "
+                          "every key number must come with a word-for-word quote, and the app checks that the quote "
+                          "really is in the filing and contains the number."),
+                    _card("Trust levels",
+                          "All quotes found: high trust. Some missing: check by hand. Numbers in the summary that aren't "
+                          "in the filing are flagged too; sometimes they're rounded or converted, sometimes made up."),
+                ],
+                "takeaway": "Ask for fixed fields with quotes, then verify every quote against the source.",
+                "quiz": [
+                    _q("The AI says revenue was $96.2 billion but its quote isn't in the filing. You should:",
+                       ["Treat the number as unverified and check it", "Trust it: AI read the filing",
+                        "Ignore the filing"], 0, "Unverified numbers are exactly where hallucinations hide."),
+                    _q("Why ask for a word-for-word quote with each number?", ["So a program can check it against the source",
+                                                                               "It looks nicer", "It's required by the SEC"], 0,
+                       "Quotes turn trust into something you can test."),
+                ],
+            },
+            {
+                "id": "l12-future", "title": "The AI already knows the future", "minutes": 4,
+                "cards": [
+                    _card("Training-data leakage",
+                          "Ask an LLM how a stock did after its May 2024 earnings, with no documents, and it may just "
+                          "remember: it learned from text written later. That's [[training-data-leakage|training-data "
+                          "leakage]], look-ahead bias hidden inside the model."),
+                    _card("Why it ruins backtests",
+                          "Score old earnings releases with that model, and its 'sentiment' may quietly reflect what "
+                          "happened next. The backtest looks brilliant; live trading won't. One fix: hide the company "
+                          "name, ticker and dates before scoring."),
+                    _card("Event studies",
+                          "An [[event-study|event study]] compares the score with the stock's move after each release. "
+                          "With 6 events it's mostly noise. Real research uses hundreds, anonymised, across many "
+                          "companies and years."),
+                ],
+                "takeaway": "LLMs leak the future. Anonymise, use many events, and stay sceptical of AI backtests.",
+                "quiz": [
+                    _q("An LLM scores 2023 earnings releases and its scores predict 2023 moves amazingly well. Most likely:",
+                       ["The model learned what happened from later text", "AI can predict markets",
+                        "Earnings always move stocks"], 0, "It may simply remember the outcome."),
+                    _q("Why remove names and dates before scoring?", ["So the model can't use what it remembers",
+                                                                      "To save money", "It reads faster"], 0,
+                       "Anonymising reduces training-data leakage."),
+                ],
+            },
+        ],
+        "challenges": [
+            _ch("read-filing", "Have the AI read a filing", "Open Research, pick a company and an earnings release, and press Analyse.",
+                "research_filing"),
+            _ch("score-news", "Score recent news", "In Research, press 'Score the news' for any asset.", "research_news"),
+            _ch("memory-test", "Test the AI's memory", "In Research, run 'Does the AI already know?' for a past date.",
+                "research_memory"),
+            _ch("event-study", "Run an event study", "In Research, run an event study on earnings releases.",
+                "research_study"),
+            _ch("both-studies", "Compare anonymised and named", "Run the event study both ways and compare.",
+                "research_study", 2, distinct=True, bonus=True),
+        ],
+    },
+    {
+        "n": 13, "title": "Agents and the capstone", "phase": "LLMs and agents",
+        "summary": "An agent that researches, signals, checks risk and proposes trades for your approval, then a 4-week capstone against SPY.",
+        "unlocks": ["Agent: research → signal → risk check → AI check → proposal", "Kill switch and run log",
+                    "Auto mode and auto-trading (opt-in)", "Capstone tracker and report"],
+        "lessons": [
+            {
+                "id": "l13-agents", "title": "How a trading agent works", "minutes": 4,
+                "cards": [
+                    _card("Steps, not magic",
+                          "An [[agent]] runs fixed steps for each asset: read the news, run your strategy, check risk, ask "
+                          "the AI for a second look, then make a [[proposal]]. Each step is logged."),
+                    _card("Who decides what",
+                          "Rules decide the trade and its size (your strategy, risk per trade, your safety net). The AI "
+                          "can only raise a concern; it can't change the size or invent trades. Keeping the AI out of "
+                          "the money decisions is a design choice, not an accident."),
+                    _card("You approve",
+                          "Start with a [[human-in-the-loop|human in the loop]]: every proposal waits for your yes or no. "
+                          "[[auto-trading|Auto mode]] executes unflagged proposals by itself; only switch it on once you've "
+                          "watched the agent behave for a while. The [[ai-filter|AI filter]] on Charts works the same way."),
+                ],
+                "takeaway": "Rules size the trade, AI only flags, and you approve until you trust it.",
+                "quiz": [
+                    _q("In this agent, what decides the size of a trade?", ["Rules: risk per trade and your safety net",
+                                                                            "The AI", "The news"], 0,
+                       "The AI can flag but never sets the size."),
+                    _q("When should you switch on auto mode?", ["After watching many approved proposals behave as expected",
+                                                                "Straight away", "Never think about it"], 0,
+                       "Trust is earned by evidence, like any strategy."),
+                ],
+            },
+            {
+                "id": "l13-safety", "title": "When automation goes wrong", "minutes": 3,
+                "cards": [
+                    _card("Things that break",
+                          "Stale or missing prices, a bug in your strategy, a loop that keeps buying, an AI that "
+                          "misreads the news, a market that gaps overnight. Automation repeats mistakes fast."),
+                    _card("Your defences",
+                          "The [[kill-switch|kill switch]] stops the agent, cancels proposals and waiting orders, and can "
+                          "sell its positions. The [[audit-log|audit log]] shows every step and reason, so you can find "
+                          "what went wrong. Your safety net and daily loss limit still apply to every trade."),
+                ],
+                "takeaway": "Plan for failure: logs to understand it, a kill switch to stop it, limits to contain it.",
+                "quiz": [
+                    _q("The agent keeps proposing odd trades after a data glitch. First move:", ["Press the kill switch",
+                                                                                                 "Approve them quickly",
+                                                                                                 "Raise risk per trade"], 0,
+                       "Stop first, investigate with the log second."),
+                    _q("What's the audit log for?", ["Seeing exactly what the agent did and why", "Making trades faster",
+                                                     "Hiding mistakes"], 0, "You can't fix what you can't see."),
+                ],
+            },
+            {
+                "id": "l13-capstone", "title": "The capstone", "minutes": 3,
+                "cards": [
+                    _card("Write the plan first",
+                          "Your [[trading-plan|trading plan]]: what you trade, your rules (built-in or your own code), how "
+                          "you size, when you'd stop. Writing it before you start is what makes the result honest."),
+                    _card("Run it for 4 weeks",
+                          "Use the agent, your strategy, your portfolio, or all three. The capstone tracks your paper "
+                          "account against SPY, the [[benchmark]], from the day you start."),
+                    _card("Write it up honestly",
+                          "After 28 days, generate the report: return, volatility, drawdown and trades vs SPY, with an "
+                          "AI-drafted write-up whose numbers are checked. Four weeks is a tiny sample, whichever way it "
+                          "goes. The habit of measuring honestly is the real graduation."),
+                ],
+                "takeaway": "Plan, run, measure against the benchmark, and write it up without spin.",
+                "quiz": [
+                    _q("You beat SPY by 3% in 4 weeks. That proves:", ["Very little: 4 weeks is a tiny sample",
+                                                                       "You have an edge", "You should use real money now"], 0,
+                       "Short periods are dominated by luck."),
+                    _q("Why write the plan before starting?", ["So you can't change the story afterwards",
+                                                               "The app needs it", "It improves returns"], 0,
+                       "A plan written in advance keeps the evaluation honest."),
+                ],
+            },
+        ],
+        "challenges": [
+            _ch("agent-run", "Run the agent once", "Open Agent, choose a watchlist and strategy, and press 'Run now'.",
+                "agent_run"),
+            _ch("agent-approve", "Approve a proposal", "When the agent proposes a trade, read its reasons and approve it.",
+                "agent_approve"),
+            _ch("kill-switch", "Use the kill switch", "On Agent, press the kill switch once to see what it stops.",
+                "kill_switch"),
+            _ch("capstone-start", "Start your capstone", "On Agent → Capstone, write your plan and press Start.",
+                "capstone_start"),
+            _ch("capstone-report", "Write your 4-week capstone report",
+                "After 28 days, press 'Generate report' on Agent → Capstone.", "capstone_report"),
+            _ch("agent-schedule", "Put the agent on a schedule", "Switch the agent on so it runs by itself (approve mode is fine).",
+                "agent_on", bonus=True),
+        ],
+    },
 ]
 
-# Levels planned but not built yet. Shown on the course page as "coming soon".
-ROADMAP: list[dict[str, Any]] = [
-    {"n": 8, "title": "Python for quants", "phase": "Code",
-     "summary": "pandas basics: load prices, compute returns and volatility, draw charts. An AI pair-programmer "
-                "explains and fixes your code.", "unlocks": ["Code Lab with an AI pair-programmer"]},
-    {"n": 9, "title": "Your strategy in code", "phase": "Code",
-     "summary": "Write a signal function, run it through the same backtester and walk-forward test.",
-     "unlocks": ["Custom strategies"]},
-    {"n": 10, "title": "Portfolios and factors", "phase": "Portfolios and risk",
-     "summary": "Volatility targeting, risk parity, why mean-variance is fragile, rebalancing costs, half-Kelly; value, "
-                "momentum and quality factors.", "unlocks": ["Portfolio builder", "Factor breakdown of your returns"]},
-    {"n": 11, "title": "Machine-learning signals", "phase": "Machine learning",
-     "summary": "Features and labels, splitting by time, leakage, gradient boosting, and why accuracy isn't profit.",
-     "unlocks": ["ML Lab"]},
-    {"n": 12, "title": "LLMs as research analysts", "phase": "LLMs and agents",
-     "summary": "Summarise SEC filings and earnings news, turn text into data, catch hallucinations, and avoid the "
-                "'LLM already knows the future' trap.", "unlocks": ["Research agent (local AI)"]},
-    {"n": 13, "title": "Agents and the capstone", "phase": "LLMs and agents",
-     "summary": "Research → signal → risk check → paper order, with your approval, logs and a kill switch. Then run "
-                "your strategy for 4 weeks and write it up against SPY.", "unlocks": ["Auto-trading agent"]},
-]
+# Levels planned but not built yet (none left: the whole course is built).
+ROADMAP: list[dict[str, Any]] = []
 TOTAL_LEVELS = len(LEVELS) + len(ROADMAP)

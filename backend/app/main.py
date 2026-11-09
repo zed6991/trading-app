@@ -2,21 +2,25 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 import httpx
+import numpy as np
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import assets, indicators, prices, quant
+from app import assets, codelab, indicators, ml, portfolio, prices, quant
 from app.backtest import bars_per_year, run_backtest, walk_forward
 from app.broker import RiskError
 from app.config import settings
 from app.engine import TradingEngine
+from app.agent import _daily_equity
 from app.learn import GLOSSARY
+from app.llm import LLMError
 from app.stocks import market_status
 from app.strategies import STRATEGIES, list_strategies
 
@@ -58,6 +62,11 @@ async def _key_error(_: Request, exc: KeyError):
 @app.exception_handler(ValueError)
 async def _value_error(_: Request, exc: ValueError):
     return _bad_request(exc)
+
+
+@app.exception_handler(LLMError)
+async def _llm_error(_: Request, exc: LLMError):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 
 @app.exception_handler(RequestValidationError)
@@ -161,6 +170,119 @@ class LuckRequest(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     years: int = Field(default=5, ge=1, le=10)
     trials: int = Field(default=500, ge=50, le=2000)
+
+
+class AISettings(BaseModel):
+    cloud_enabled: bool | None = None
+    cloud_model: str | None = None
+    cloud_tasks: list[str] | None = None
+    monthly_cap_usd: float | None = None
+
+
+class CodeRun(BaseModel):
+    code: str = Field(max_length=50_000)
+
+
+class CodeCheck(BaseModel):
+    exercise_id: str
+    code: str = Field(max_length=50_000)
+
+
+class CodeAssist(BaseModel):
+    code: str = Field(default="", max_length=20_000)
+    output: str = Field(default="", max_length=6_000)
+    error: str = Field(default="", max_length=6_000)
+    question: str = Field(default="", max_length=1_000)
+    mode: Literal["explain", "hint", "fix", "ask"] = "explain"
+    exercise_id: str | None = None
+
+
+class StrategyEval(BaseModel):
+    code: str = Field(max_length=50_000)
+    symbol: str = "SPY"
+    fee_pct: float | None = Field(default=None, ge=0, le=5)
+
+
+class StrategySave(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    code: str = Field(max_length=50_000)
+    symbol: str | None = None
+
+
+class PortfolioRequest(BaseModel):
+    symbols: list[str] = Field(min_length=2, max_length=10)
+    years: int = Field(default=5, ge=2, le=10)
+    rebalance: Literal["daily", "weekly", "monthly", "quarterly", "never"] = "monthly"
+    split: float = Field(default=0.5, ge=0.3, le=0.8)
+    target_vol_pct: float | None = Field(default=None, ge=2, le=40)
+    cost_pct: float = Field(default=0.05, ge=0, le=2)
+
+
+class KellyRequest(BaseModel):
+    symbol: str
+    years: int = Field(default=5, ge=1, le=10)
+
+
+class FactorRequest(BaseModel):
+    target: str = "SPY"  # a symbol, "mix" (with weights) or "account"
+    weights: dict[str, float] | None = None
+    years: int = Field(default=5, ge=1, le=10)
+
+
+class ApplyPortfolio(BaseModel):
+    weights: dict[str, float]
+    invest_pct: float = Field(default=0.9, ge=0.05, le=1.0)
+    fit_limits: bool = False
+
+
+class MLRequest(BaseModel):
+    symbol: str = "SPY"
+    model: Literal["logistic", "boosting"] = "boosting"
+    horizon: Literal[1, 5, 20] = 5
+    years: int = Field(default=10, ge=4, le=15)
+    shuffle: bool = False
+    leak: bool = False
+    threshold: float = Field(default=0.5, ge=0.3, le=0.7)
+
+
+class FilingRequest(BaseModel):
+    ticker: str
+    accession: str
+    anonymous: bool = False
+
+
+class MemoryRequest(BaseModel):
+    ticker: str
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+class StudyRequest(BaseModel):
+    ticker: str
+    count: int = Field(default=6, ge=3, le=12)
+    horizon: int = Field(default=5, ge=1, le=20)
+    anonymous: bool = True
+
+
+class AgentUpdate(BaseModel):
+    enabled: bool | None = None
+    mode: Literal["approve", "auto"] | None = None
+    watchlist: list[str] | None = None
+    strategy: dict[str, Any] | None = None
+    interval_min: int | None = None
+    risk_pct: float | None = None
+    use_research: bool | None = None
+
+
+class Decision(BaseModel):
+    approve: bool
+
+
+class KillRequest(BaseModel):
+    sell_positions: bool = False
+
+
+class CapstoneStart(BaseModel):
+    plan: str = Field(max_length=4000)
 
 
 # ---------------------------------------------------------------------- REST
@@ -492,6 +614,273 @@ async def ws_endpoint(ws: WebSocket):
         logger.debug("WebSocket closed: %r", exc)
     finally:
         engine.hub.disconnect(ws)
+
+
+# ---------------------------------------------------------------------- AI settings (local first, cloud optional)
+@app.get("/api/ai/settings")
+async def ai_settings():
+    return engine.llm.public()
+
+
+@app.put("/api/ai/settings")
+async def ai_settings_update(body: AISettings):
+    return engine.llm.update(body.model_dump(exclude_none=True))
+
+
+# ---------------------------------------------------------------------- Code Lab (levels 8-9)
+def _exercises() -> list[dict]:
+    done = set(engine.learn.p["sets"].get("ex8", [])) | set(engine.learn.p["sets"].get("ex9", []))
+    return [{**{k: e[k] for k in ("id", "level", "title", "task", "starter")}, "done": e["id"] in done}
+            for e in codelab.EXERCISES]
+
+
+@app.get("/api/code/exercises")
+async def code_exercises():
+    return {"exercises": _exercises(), "strategy_template": codelab.STRATEGY_TEMPLATE,
+            "sandboxed": bool(codelab.SANDBOX), "symbols": engine.symbols}
+
+
+@app.post("/api/code/run")
+async def code_run(body: CodeRun):
+    result = await codelab.run_code(body.code, symbols=engine.symbols)
+    engine.learn.record("code_run")
+    return result
+
+
+@app.post("/api/code/check")
+async def code_check(body: CodeCheck):
+    ex = codelab.EXERCISE_BY_ID.get(body.exercise_id)
+    if not ex:
+        raise KeyError(f"Unknown exercise '{body.exercise_id}'")
+    result = await codelab.run_code(body.code, extra=codelab.check_harness(ex), symbols=engine.symbols)
+    engine.learn.record("code_run")
+    passed = bool(result["check"] and result["check"]["pass"])
+    if passed:
+        engine.learn.record("ex8" if ex["level"] == 8 else "ex9", ex["id"])
+    result["passed"] = passed
+    return result
+
+
+CODE_SYSTEM = (
+    "You are a patient Python pair-programmer inside a course that teaches a beginner to become a quant trader. "
+    "They are on level {level}. They write pandas code with a helper module `qp`: qp.prices(symbol, years) returns a "
+    "DataFrame of daily open/high/low/close/volume indexed by date; qp.chart(series_or_df_or_dict, title) draws lines; "
+    "qp.table(df) shows a table; qp.symbols() lists symbols. Available libraries: pandas, numpy, scikit-learn. There is "
+    "no internet. Explain in plain English, short sentences, no jargon without a 5-word definition. Mode: {mode}. "
+    "explain = explain what the code or error means. hint = give 1-3 hints that lead them to the answer WITHOUT writing "
+    "the solution. fix = return corrected full code. ask = answer their question. Never claim a strategy will make money. "
+    "If the code peeks at the future (e.g. shift(-1) in a signal), point it out. Respond with ONLY JSON: "
+    '{{"explanation": "...", "hints": ["..."], "code": "full corrected code, or null"}}'
+)
+
+
+@app.post("/api/code/assist")
+async def code_assist(body: CodeAssist):
+    task = ""
+    if body.exercise_id and body.exercise_id in codelab.EXERCISE_BY_ID:
+        task = f"Exercise: {codelab.EXERCISE_BY_ID[body.exercise_id]['task']}\n"
+    mode = body.mode
+    if body.exercise_id and mode == "fix":
+        mode = "hint"  # exercises are for learning: hints, not answers
+    user = (f"{task}Their question: {body.question or '(none)'}\n\nCODE:\n{body.code[:12000]}\n\n"
+            f"OUTPUT:\n{body.output[:3000]}\n\nERROR:\n{body.error[:3000] or '(none)'}")
+    reply = await engine.llm.chat("code", [{"role": "system", "content": CODE_SYSTEM.format(level=engine.learn.level(), mode=mode)},
+                                           {"role": "user", "content": user}], max_tokens=1800, temperature=0.2)
+    j = reply["json"] or {}
+    engine.learn.record("code_assist")
+    code = j.get("code") if mode == "fix" and isinstance(j.get("code"), str) else None
+    return {"explanation": str(j.get("explanation", ""))[:3000], "hints": [str(h)[:400] for h in (j.get("hints") or [])][:4],
+            "code": code, "mode": mode, "source": reply["source"], "cost_usd": reply["cost_usd"]}
+
+
+@app.post("/api/code/strategy/evaluate")
+async def code_strategy_evaluate(body: StrategyEval):
+    symbol = engine.check_symbol(body.symbol)
+    fee = body.fee_pct / 100 if body.fee_pct is not None else assets.fee_rate(symbol, settings.fee_rate)
+    result = await codelab.evaluate_strategy(body.code, symbol, fee, settings.slippage_bps)
+    engine.learn.record("code_run")
+    if result["ok"]:
+        engine.learn.record("custom_backtest")
+        if not result["lookahead"]:
+            engine.learn.record("lookahead_clean")
+        outs = result["out_sample"]["metrics"]
+        if outs["num_trades"] and outs["total_return_pct"] > outs["buy_hold_return_pct"]:
+            engine.learn.record("custom_oos_beat")
+    return result
+
+
+@app.get("/api/code/strategies")
+async def code_strategies():
+    return engine.custom_strategies()
+
+
+@app.post("/api/code/strategies")
+async def code_strategy_save(body: StrategySave):
+    return engine.save_custom_strategy(body.name, body.code, body.symbol)
+
+
+@app.delete("/api/code/strategies/{name}")
+async def code_strategy_delete(name: str):
+    return engine.delete_custom_strategy(name)
+
+
+# ---------------------------------------------------------------------- portfolios and factors (level 10)
+@app.post("/api/lab/portfolio")
+async def lab_portfolio(body: PortfolioRequest):
+    symbols = list(dict.fromkeys(engine.check_symbol(s) for s in body.symbols))
+    series = await prices.many_daily(symbols, max(_daily_bars(s, body.years) for s in symbols))
+    result = await asyncio.to_thread(portfolio.compare, series, None, body.split, body.rebalance, body.cost_pct / 100,
+                                     body.target_vol_pct / 100 if body.target_vol_pct else None)
+    engine.learn.record("portfolio_compare")
+    if body.target_vol_pct:
+        engine.learn.record("vol_target")
+    return result
+
+
+@app.post("/api/lab/kelly")
+async def lab_kelly(body: KellyRequest):
+    symbol = engine.check_symbol(body.symbol)
+    data = await prices.cached_history(symbol, "1d", _daily_bars(symbol, body.years))
+    engine.learn.record("kelly_run")
+    return await asyncio.to_thread(portfolio.kelly, data, symbol)
+
+
+@app.post("/api/lab/factors")
+async def lab_factors(body: FactorRequest):
+    bars = 252 * body.years + 1
+    factors = await prices.many_daily(portfolio.FACTOR_ETFS, bars)
+    if body.target == "account":
+        daily = _daily_equity(engine.db.query("SELECT ts, equity FROM equity ORDER BY ts"))
+        if len(daily) < 30:
+            raise ValueError(f"Your paper account has {len(daily)} days of history. Factor analysis needs at least 30.")
+        target = [{"time": int(datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()), "close": v}
+                  for d, v in daily]
+        name = "Your paper account"
+    elif body.target == "mix":
+        weights = {engine.check_symbol(s): float(w) for s, w in (body.weights or {}).items() if float(w) > 0}
+        if len(weights) < 1:
+            raise ValueError("Add some weights for the mix.")
+        series = await prices.many_daily(list(weights), bars)
+        times, closes = quant.align(series)
+        tot = sum(weights.values())
+        r = sum((closes[s][1:] / closes[s][:-1] - 1) * (w / tot) for s, w in weights.items())
+        value = np.concatenate([[1.0], np.cumprod(1 + r)])
+        target = [{"time": t, "close": float(v)} for t, v in zip(times, value)]
+        name = "Your mix"
+    else:
+        sym = engine.check_symbol(body.target)
+        target = await prices.cached_history(sym, "1d", _daily_bars(sym, body.years))
+        name = assets.name(sym)
+    result = await asyncio.to_thread(portfolio.factor_breakdown, factors, name, target)
+    engine.learn.record("factor_run")
+    return result
+
+
+@app.post("/api/portfolio/apply")
+async def portfolio_apply(body: ApplyPortfolio):
+    return await engine.apply_portfolio(body.weights, body.invest_pct, body.fit_limits)
+
+
+@app.get("/api/portfolio")
+async def portfolio_current():
+    return engine.db.get_kv("portfolio") or {}
+
+
+# ---------------------------------------------------------------------- machine learning (level 11)
+@app.post("/api/lab/ml")
+async def lab_ml(body: MLRequest):
+    symbol = engine.check_symbol(body.symbol)
+    data = await prices.cached_history(symbol, "1d", _daily_bars(symbol, body.years))
+    fee = assets.fee_rate(symbol, settings.fee_rate) + settings.slippage_bps / 10_000
+    result = await asyncio.to_thread(ml.train, data, symbol, body.model, body.horizon, 0.7, body.shuffle, body.leak,
+                                     fee, body.threshold)
+    engine.learn.record("ml_train")
+    if body.shuffle:
+        engine.learn.record("ml_shuffle")
+    if body.leak:
+        engine.learn.record("ml_leak")
+    if result.get("beat_hold") and not body.leak and not body.shuffle:
+        engine.learn.record("ml_beat_hold")
+    return result
+
+
+# ---------------------------------------------------------------------- research (level 12)
+@app.get("/api/research/filings/{ticker}")
+async def research_filings(ticker: str):
+    from app.research import filings
+
+    return await filings(ticker, limit=25)
+
+
+@app.post("/api/research/filing")
+async def research_filing(body: FilingRequest):
+    result = await engine.researcher.analyse_filing(body.ticker, body.accession, body.anonymous)
+    engine.learn.record("research_filing")
+    return result
+
+
+@app.get("/api/research/news/{ticker}")
+async def research_news(ticker: str):
+    result = await engine.researcher.news(engine.check_symbol(ticker))
+    engine.learn.record("research_news")
+    return result
+
+
+@app.post("/api/research/memory")
+async def research_memory(body: MemoryRequest):
+    result = await engine.researcher.memory_test(body.ticker.upper(), body.date)
+    engine.learn.record("research_memory")
+    return result
+
+
+@app.post("/api/research/study")
+async def research_study(body: StudyRequest):
+    result = await engine.researcher.event_study(body.ticker, body.count, body.horizon, body.anonymous)
+    engine.learn.record("research_study", "anon" if body.anonymous else "named")
+    return result
+
+
+# ---------------------------------------------------------------------- agent + capstone (level 13)
+@app.get("/api/agent")
+async def agent_state():
+    return engine.agent.state()
+
+
+@app.put("/api/agent")
+async def agent_update(body: AgentUpdate):
+    return engine.agent.update(body.model_dump(exclude_none=True))
+
+
+@app.post("/api/agent/run")
+async def agent_run():
+    await engine.agent.run_once(manual=True)
+    return engine.agent.state()
+
+
+@app.post("/api/agent/proposals/{proposal_id}")
+async def agent_decide(proposal_id: int, body: Decision):
+    await engine.agent.decide(proposal_id, body.approve)
+    return engine.agent.state()
+
+
+@app.post("/api/agent/kill")
+async def agent_kill(body: KillRequest):
+    return await engine.agent.kill(body.sell_positions)
+
+
+@app.get("/api/capstone")
+async def capstone_state():
+    return {"status": engine.capstone.status(), "days_needed": 28}
+
+
+@app.post("/api/capstone/start")
+async def capstone_start(body: CapstoneStart):
+    return {"status": await engine.capstone.start(body.plan), "days_needed": 28}
+
+
+@app.post("/api/capstone/report")
+async def capstone_report():
+    return await engine.capstone.report()
 
 
 # ---------------------------------------------------------------------- static dashboard (mounted last)

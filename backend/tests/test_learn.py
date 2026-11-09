@@ -54,8 +54,7 @@ def test_terms_are_taught_no_later_than_used():
 
 def test_every_glossary_term_is_taught_in_a_lesson():
     linked = {slug for lesson in LESSONS.values() for text in _all_text(lesson) for slug in term_slugs(text)}
-    later = {"auto-trading", "ai-filter"}  # shown on Charts with unlock-all; taught in roadmap levels 12-13
-    missing = {g["slug"] for g in GLOSSARY} - linked - later
+    missing = {g["slug"] for g in GLOSSARY} - linked
     assert not missing, f"glossary terms no lesson teaches: {sorted(missing)}"
 
 
@@ -92,7 +91,12 @@ def test_challenges_reachable():
     known = {"manual_buy", "manual_sell", "buy_stock", "buy_crypto", "limit_order", "limit_fill", "win", "risk",
              "risk_sized", "brackets", "protect_exit", "analyze", "stats", "corr", "mix_calm", "mix_cross",
              "luck_test", "luck_many", "luck_beat95", "backtest", "backtest_strategy", "beat_hold", "walkforward",
-             "oos_beat_hold", "explain", "coach_ask", "coach_review"} | CLIENT_EVENTS
+             "oos_beat_hold", "explain", "coach_ask", "coach_review",
+             "code_run", "ex8", "ex9", "code_assist", "custom_backtest", "lookahead_clean", "strategy_saved",
+             "custom_oos_beat", "portfolio_compare", "factor_run", "portfolio_apply", "kelly_run", "vol_target",
+             "ml_train", "ml_shuffle", "ml_leak", "ml_beat_hold", "research_filing", "research_news",
+             "research_memory", "research_study", "agent_run", "agent_approve", "kill_switch", "capstone_start",
+             "capstone_report", "agent_on"} | CLIENT_EVENTS
     ids = set()
     for lvl in LEVELS:
         assert any(not c["bonus"] for c in lvl["challenges"])
@@ -190,3 +194,15 @@ def test_explanations():
     assert "with a limit order" in rule_explanation(trade_facts(limit_sell, stock_buy, "Apple"))["why"]
     orphan = rule_explanation(trade_facts(stop, None, "Bitcoin"))
     assert "isn't in your history" in orphan["why"]
+
+
+def test_exercise_challenges_match_exercises():
+    from app.codelab import EXERCISES
+
+    by_level = {8: 0, 9: 0}
+    for e in EXERCISES:
+        by_level[e["level"]] += 1
+    for lvl in LEVELS:
+        for c in lvl["challenges"]:
+            if c["event"] in ("ex8", "ex9"):
+                assert c["times"] == by_level[int(c["event"][2])], c["id"]

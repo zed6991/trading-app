@@ -1,10 +1,12 @@
 // Quant Lab: stats, correlation, portfolio mixer, luck test and backtester (with walk-forward). Daily data.
+import { bars } from "./ui.js";
+
 const LC = window.LightweightCharts;
 const $ = (id) => document.getElementById(id);
 const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ESC[c]);
-const TABS = ["stats", "corr", "mix", "luck", "backtest"];
-const TAB_LEVEL = { stats: 4, corr: 5, mix: 5, luck: 6, backtest: 7 };
+const TABS = ["stats", "corr", "mix", "luck", "backtest", "portfolio", "factors", "ml"];
+const TAB_LEVEL = { stats: 4, corr: 5, mix: 5, luck: 6, backtest: 7, portfolio: 10, factors: 10, ml: 11 };
 const LAB_RISK = { max_position_pct: 1, stop_loss_pct: 0, take_profit_pct: 0, trailing_stop_pct: 0, daily_loss_limit_pct: 0 };
 const STRAT_NAMES = {
   sma_cross: "Moving-average crossover (trend)", ema_macd: "MACD with trend filter (trend)",
@@ -484,8 +486,211 @@ async function runBacktest(walk) {
   } catch (err) { fail(pane, err); }
 }
 
+// ---------------------------------------------------------------- portfolio (level 10)
+const PF_DEFAULT = ["SPY", "TLT", "GLD", "QQQ", "KO"];
+let lastPortfolio = null;
+
+function buildPortfolio() {
+  const pane = $("lab-portfolio");
+  pane.innerHTML = `
+    <p class="lab-intro">Five ways to weight the same assets. Each is fitted on the first half of history and judged on the
+      second half it never saw. Watch whether the scheme that looked best in hindsight (${term("mean-variance", "mean-variance")})
+      still wins afterwards. Costs are paid on every ${term("rebalancing", "rebalance")}.</p>
+    <form class="lab-form" id="pf-form">
+      ${chips("pf-pick", PF_DEFAULT)}
+      <label>Years <select id="pf-years"><option>3</option><option selected>5</option><option>10</option></select></label>
+      <label>Rebalance <select id="pf-reb"><option value="weekly">Weekly</option><option value="monthly" selected>Monthly</option>
+        <option value="quarterly">Quarterly</option><option value="never">Never</option></select></label>
+      <label>${term("volatility-targeting", "Target volatility")} <select id="pf-vt"><option value="">Off</option><option value="8">8% a year</option>
+        <option value="10">10% a year</option><option value="15">15% a year</option></select></label>
+      <label>Cost per $ traded % <input type="number" id="pf-cost" value="0.05" step="0.01" min="0"></label>
+      <button class="btn btn-primary" type="submit">Compare</button>
+    </form>
+    <div class="lab-out"></div>
+    <div class="lab-box"><h3>${term("kelly", "Kelly")} sizing for one asset</h3>
+      <p>How big should a bet be? Kelly says fraction = average return ÷ variance, if you knew them. See what full and half
+        Kelly would have done (with ${term("leverage", "leverage")}) compared with simply holding.</p>
+      <form class="lab-form" id="kl-form"><label>Asset <select id="kl-sym">${assetOptions("SPY")}</select></label>
+        <button class="btn" type="submit">Check Kelly</button></form>
+      <div id="kl-out"></div></div>`;
+  pane.querySelector("#pf-pick").addEventListener("change", (e) => e.target.closest(".chip")?.classList.toggle("on", e.target.checked));
+  pane.querySelector("#pf-form").addEventListener("submit", (e) => { e.preventDefault(); runPortfolio(); });
+  pane.querySelector("#kl-form").addEventListener("submit", (e) => { e.preventDefault(); runKelly(); });
+}
+
+async function runPortfolio() {
+  const pane = $("lab-portfolio");
+  const symbols = [...pane.querySelectorAll("#pf-pick input:checked")].map((i) => i.value);
+  if (symbols.length < 2) return fail(pane, "Pick at least two assets.");
+  busy(pane, "Fitting five weighting schemes and testing them on unseen data…");
+  try {
+    const vt = $("pf-vt").value;
+    const r = await api("/api/lab/portfolio", "POST", { symbols, years: Number($("pf-years").value), rebalance: $("pf-reb").value,
+      cost_pct: Number($("pf-cost").value), target_vol_pct: vt ? Number(vt) : null });
+    lastPortfolio = r;
+    const short = (s) => s.replace(/USDT$/, "");
+    const rows = r.rows.map((row, i) => {
+      const o = row.out_sample;
+      const wbars = Object.entries(row.weights).map(([s, w]) => `<span class="wchip" title="${esc(nameOf(s))}: ${(w * 100).toFixed(0)}% of money, ${(row.risk_share[s] * 100).toFixed(0)}% of risk">${esc(short(s))} ${(w * 100).toFixed(0)}%</span>`).join("");
+      return `<tr class="${row.scheme === r.best_out_sample ? "hl" : ""}"><td><b>${esc(row.name)}</b><div class="wchips">${wbars}</div></td>
+        <td>${num(row.in_sample.sharpe)}${row.scheme === r.best_in_sample ? " ★" : ""}</td>
+        <td><b>${num(o.sharpe)}</b>${row.scheme === r.best_out_sample ? " ★" : ""}</td><td class="${tone(o.cagr_pct)}">${pct(o.cagr_pct)}</td>
+        <td>${num(o.vol_annual_pct, 1)}%</td><td>-${num(o.max_drawdown_pct, 1)}%</td>
+        ${r.target_vol_pct ? `<td>${num(row.vol_target.sharpe)} / ${num(row.vol_target.vol_annual_pct, 1)}%</td>` : ""}
+        <td>${num(row.turnover, 1)}x</td><td><button type="button" class="btn btn-sm" data-invest="${i}">Invest this</button></td></tr>`;
+    }).join("");
+    const same = r.best_in_sample === r.best_out_sample;
+    const nameBy = (k) => r.rows.find((x) => x.scheme === k).name;
+    const verdict = same ? `${nameBy(r.best_in_sample)} was best both before and after the split. Good, but one test is one test.`
+      : `${nameBy(r.best_in_sample)} looked best on the history it was fitted to, but ${nameBy(r.best_out_sample)} did best on the unseen half. Hindsight flatters the cleverest scheme.`;
+    const series = r.rows.map((row, i) => ({ data: row.curve, color: COLORS[i % COLORS.length], width: row.scheme === r.best_out_sample ? 3 : 1.5 }));
+    pane.querySelector(".lab-out").innerHTML = `
+      <p class="lab-verdict">${esc(verdict)}</p>
+      <div class="lab-box"><h3>Fitted ${esc(r.train)}, tested ${esc(r.test)}</h3>
+        <p>Weights come from the first period only. ★ = best Sharpe. Hover a weight to see its share of the risk.</p>
+        <div class="heat-wrap"><table class="lab-table pf-table"><tr><th>Scheme and weights</th><th>Sharpe before</th><th>Sharpe after</th>
+          <th>Yearly growth after</th><th>Volatility after</th><th>Max drawdown after</th>${r.target_vol_pct ? `<th>With ${r.target_vol_pct}% vol target</th>` : ""}
+          <th>${term("turnover", "Turnover")} / year</th><th></th></tr>${rows}</table></div></div>
+      <div class="lab-box" id="pf-invest" hidden></div>
+      <div class="lab-box"><h3>Test period: $10,000 in each scheme</h3>${legend(r.rows.map((row, i) => ({ label: row.name, color: COLORS[i % COLORS.length] })))}
+        <div class="lab-chart" id="pf-chart"></div></div>`;
+    lineChart("pf-chart", series);
+    pane.querySelector(".pf-table").addEventListener("click", (e) => { const b = e.target.closest("[data-invest]"); if (b) showInvest(Number(b.dataset.invest)); });
+    learnRefresh();
+  } catch (err) { fail(pane, err); }
+}
+
+function showInvest(i) {
+  const row = lastPortfolio.rows[i];
+  const box = $("pf-invest");
+  const weights = Object.fromEntries(Object.entries(row.weights).filter(([, w]) => w > 0.005));
+  box.hidden = false;
+  box.innerHTML = `<h3>Invest "${esc(row.name)}" in your paper account</h3>
+    <p>This sells anything not in the portfolio (or more than 5% off target) and buys the rest. Portfolio positions have no stop-loss:
+      their risk is handled by diversification and rebalancing. Run it again later to rebalance.</p>
+    <div class="lab-form"><label>Invest <span class="input-suffix-inline"><input type="number" id="pf-pct" value="90" min="5" max="100" step="5"> % of the account</span></label>
+      <label class="switch-row"><input type="checkbox" id="pf-fit"> Raise my safety-net limits to fit (positions and per-trade %)</label>
+      <button type="button" class="btn btn-primary" id="pf-go">Invest</button></div>
+    <p id="pf-msg"></p>`;
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  $("pf-go").addEventListener("click", async () => {
+    $("pf-msg").textContent = "Placing trades…";
+    try {
+      const r = await api("/api/portfolio/apply", "POST", { weights, invest_pct: Number($("pf-pct").value) / 100, fit_limits: $("pf-fit").checked });
+      $("pf-msg").innerHTML = `<span class="up">Done: ${r.trades.length} trade(s). Your account is now ${money(r.account.equity)}.</span> ${r.note ? esc(r.note) : ""}`;
+      learnRefresh();
+    } catch (err) { $("pf-msg").innerHTML = `<span class="down">${esc(err.message)}</span>`; }
+  });
+}
+
+async function runKelly() {
+  const out = $("kl-out");
+  out.innerHTML = `<p class="lab-loading">Calculating…</p>`;
+  try {
+    const r = await api("/api/lab/kelly", "POST", { symbol: $("kl-sym").value, years: 5 });
+    const names = Object.keys(r.paths);
+    out.innerHTML = `<p class="lab-verdict">Over this history ${esc(r.name)} averaged ${pct(r.mean_annual_pct)} a year with ${num(r.vol_annual_pct, 1)}% volatility,
+        so full Kelly says ${num(r.full_kelly)}x (capped at 4x) and half Kelly ${num(r.half_kelly)}x. That uses hindsight: in real life you
+        don't know these numbers, which is why people bet far less.</p>
+      <div class="lab-cards">${names.map((n) => card(esc(n), `${num(r.paths[n].final_multiple)}x`, `exposure ${num(r.paths[n].fraction)}x · max drawdown -${num(r.paths[n].max_drawdown_pct, 0)}%`,
+        n.startsWith("full") ? "bad" : "")).join("")}</div>
+      ${legend(names.map((n, i) => ({ label: n, color: COLORS[i] })))}<div class="lab-chart" id="kl-chart"></div>`;
+    lineChart("kl-chart", names.map((n, i) => ({ data: r.paths[n].curve, color: COLORS[i] })));
+    learnRefresh();
+  } catch (err) { out.innerHTML = `<p class="lab-msg">${esc(err.message)}</p>`; }
+}
+
+// ---------------------------------------------------------------- factors (level 10)
+function buildFactors() {
+  const pane = $("lab-factors");
+  pane.innerHTML = `
+    <p class="lab-intro">What really drives a return? We explain daily returns with six ${term("factor", "factors")}: the market (SPY) plus
+      size, momentum, value, quality and low volatility (each an ETF minus SPY). What's left over is ${term("alpha", "alpha")}; its
+      ${term("t-stat", "t-stat")} says whether it's distinguishable from luck.</p>
+    <form class="lab-form" id="fx-form">
+      <label>Explain <select id="fx-target">${assetOptions("NVDA")}<optgroup label="Yours"><option value="mix">The best scheme from your last Portfolio run (or 60/40 SPY/TLT)</option>
+        <option value="account">My paper account (needs 30+ days)</option></optgroup></select></label>
+      <label>Years <select id="fx-years"><option>3</option><option selected>5</option><option>10</option></select></label>
+      <button class="btn btn-primary" type="submit">Break it down</button>
+    </form><div class="lab-out"></div>`;
+  pane.querySelector("#fx-form").addEventListener("submit", (e) => { e.preventDefault(); runFactors(); });
+}
+
+async function runFactors() {
+  const pane = $("lab-factors");
+  const target = $("fx-target").value;
+  const body = { target, years: Number($("fx-years").value) };
+  if (target === "mix") {
+    const best = lastPortfolio?.rows.find((r) => r.scheme === lastPortfolio.best_out_sample);
+    body.weights = best ? best.weights : { SPY: 60, TLT: 40 };
+  }
+  busy(pane, "Running the regression…");
+  try {
+    const r = await api("/api/lab/factors", "POST", body);
+    const alphaOk = Math.abs(r.alpha_t || 0) >= 2;
+    pane.querySelector(".lab-out").innerHTML = `
+      <p class="lab-verdict">${esc(r.verdict)}</p>
+      <div class="lab-cards">${card(term("alpha", "Alpha"), `${pct(r.alpha_annual_pct)} / yr`, `t-stat ${num(r.alpha_t)}${alphaOk ? " (clear)" : " (could be luck)"}`, alphaOk ? "good" : "")}
+        ${card(term("r-squared", "R²"), `${num(r.r2 * 100, 0)}%`, "of daily moves explained by the factors")}
+        ${card("Period", esc(r.start), `to ${esc(r.end)} · ${r.days} days`)}</div>
+      <div class="lab-box"><h3>${esc(r.target)}: factor exposures</h3><p>Beta = how much it moves with each factor. |t| of about 2 or more means the tilt is clear.</p>
+        ${bars(r.loadings.map((l) => ({ label: `${l.factor.replace("_", " ")} (${l.etf})`, title: l.meaning, value: l.beta })), { signed: true, fmt: (v) => num(v) })}
+        <table class="lab-table"><tr><th>Factor</th><th>Meaning</th><th>Beta</th><th>t-stat</th></tr>
+        ${r.loadings.map((l) => `<tr><td>${esc(l.factor.replace("_", " "))}</td><td>${esc(l.meaning)}</td><td class="mono">${num(l.beta)}</td>
+          <td class="mono ${Math.abs(l.t || 0) >= 2 ? "up" : ""}">${num(l.t)}</td></tr>`).join("")}</table></div>
+      ${target === "NVDA" || target === "TSLA" ? '<p class="muted">Remember survivorship bias: we picked these stocks knowing they did well, so their alpha looks better than it could have looked in advance.</p>' : ""}`;
+    learnRefresh();
+  } catch (err) { fail(pane, err); }
+}
+
+// ---------------------------------------------------------------- machine learning (level 11)
+function buildML() {
+  const pane = $("lab-ml");
+  pane.innerHTML = `
+    <p class="lab-intro">Predict whether the price will be higher in a few days from ${term("feature", "features")} known today
+      (recent returns, volatility, RSI, distance from moving averages, volume). Trained on the first 70% of history, tested on the
+      last 30% with a gap, then turned into a strategy (hold when it says up) with costs. Try the two traps to see how results get faked.</p>
+    <form class="lab-form" id="ml-form">
+      <label>Asset <select id="ml-sym">${assetOptions("SPY")}</select></label>
+      <label>Model <select id="ml-model"><option value="logistic">Logistic regression</option><option value="boosting" selected>Gradient boosting</option></select></label>
+      <label>Predict <select id="ml-h"><option value="1">next day</option><option value="5" selected>next 5 days</option><option value="20">next 20 days</option></select></label>
+      <label>Years <select id="ml-years"><option>6</option><option selected>10</option><option>15</option></select></label>
+      <label class="switch-row"><input type="checkbox" id="ml-shuffle"> Shuffle the split (trap)</label>
+      <label class="switch-row"><input type="checkbox" id="ml-leak"> Add a leaky feature (trap)</label>
+      <button class="btn btn-primary" type="submit">Train</button>
+    </form><div class="lab-out"></div>`;
+  pane.querySelector("#ml-form").addEventListener("submit", (e) => { e.preventDefault(); runML(); });
+}
+
+async function runML() {
+  const pane = $("lab-ml");
+  busy(pane, "Building features and training… (5-20 seconds)");
+  try {
+    const r = await api("/api/lab/ml", "POST", { symbol: $("ml-sym").value, model: $("ml-model").value, horizon: Number($("ml-h").value),
+      years: Number($("ml-years").value), shuffle: $("ml-shuffle").checked, leak: $("ml-leak").checked });
+    const edge = r.accuracy_test_pct - r.baseline_pct;
+    const cls = r.leak || r.shuffle ? "bad" : edge > 2 ? "good" : "";
+    const strat = r.strategy ? `<div class="lab-box"><h3>As a strategy on the test period (${esc(r.test_period)})</h3>
+        <div class="lab-cards">${card("Model strategy", pct(r.strategy.total_return_pct), `Sharpe ${num(r.strategy.sharpe)} · ${r.strategy.trades} trades · in the market ${num(r.strategy.time_in_market_pct, 0)}%`, r.beat_hold ? "good" : "bad")}
+          ${card("Buy & hold", pct(r.buy_hold.total_return_pct), `Sharpe ${num(r.buy_hold.sharpe)} · max drawdown -${num(r.buy_hold.max_drawdown_pct, 0)}%`)}</div>
+        ${legend([{ label: "Model strategy", color: COLORS[0] }, { label: "Buy & hold", color: COLORS[1] }])}<div class="lab-chart" id="ml-chart"></div></div>` : "";
+    pane.querySelector(".lab-out").innerHTML = `
+      <p class="lab-verdict ${cls}">${esc(r.verdict)}</p>
+      <div class="lab-cards">${card(`Test ${term("accuracy", "accuracy")}`, `${num(r.accuracy_test_pct, 1)}%`, `${r.test_rows} test days`, cls)}
+        ${card("Baseline", `${num(r.baseline_pct, 1)}%`, `always guessing '${esc(r.baseline_says)}'`)}
+        ${card("Train accuracy", `${num(r.accuracy_train_pct, 1)}%`, r.overfit_gap_pct > 10 ? `${num(r.overfit_gap_pct, 0)} points above test: overfitting` : "close to test: not overfitting much", r.overfit_gap_pct > 10 ? "bad" : "")}
+        ${card(term("auc", "AUC"), num(r.auc, 3), "0.5 = coin flip")}</div>
+      ${strat}
+      <div class="lab-box"><h3>${term("feature-importance", "Feature importance")}</h3><p>How many accuracy points are lost when each feature is scrambled.</p>
+        ${bars(r.importance.map((i) => ({ label: i.label, value: i.importance })), { signed: true, fmt: (v) => `${num(v, 1)}` })}</div>`;
+    if (r.curves) lineChart("ml-chart", [{ data: r.curves.strategy, color: COLORS[0] }, { data: r.curves.buy_hold, color: COLORS[1], dashed: true }]);
+    learnRefresh();
+  } catch (err) { fail(pane, err); }
+}
+
 // ---------------------------------------------------------------- tabs + start
-const BUILDERS = { stats: buildStats, corr: buildCorr, mix: buildMix, luck: buildLuck, backtest: buildBacktest };
+const BUILDERS = { stats: buildStats, corr: buildCorr, mix: buildMix, luck: buildLuck, backtest: buildBacktest,
+  portfolio: buildPortfolio, factors: buildFactors, ml: buildML };
 const RUN_ON_OPEN = { stats: runStats };
 const built = new Set();
 

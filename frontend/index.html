@@ -9,13 +9,17 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=3">
+  <link rel="stylesheet" href="styles.css?v=4">
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="app.js?v=3"></script>
-  <script type="module" src="simple.js?v=3"></script>
-  <script type="module" src="lab.js?v=3"></script>
-  <script type="module" src="learn.js?v=3"></script>
-  <script type="module" src="coach.js?v=3"></script>
+  <script type="module" src="app.js?v=4"></script>
+  <script type="module" src="simple.js?v=4"></script>
+  <script type="module" src="lab.js?v=4"></script>
+  <script type="module" src="code.js?v=4"></script>
+  <script type="module" src="research.js?v=4"></script>
+  <script type="module" src="agent.js?v=4"></script>
+  <script type="module" src="settings.js?v=4"></script>
+  <script type="module" src="learn.js?v=4"></script>
+  <script type="module" src="coach.js?v=4"></script>
 </head>
 <body class="simple-mode view-learn">
   <header class="topbar">
@@ -30,9 +34,15 @@
       <button type="button" data-view="practice">Practice</button>
       <button type="button" data-view="dashboard" data-unlock="3">Charts</button>
       <button type="button" data-view="lab" data-unlock="4">Lab</button>
+      <button type="button" data-view="code" data-unlock="8">Code</button>
+      <button type="button" data-view="research" data-unlock="12">Research</button>
+      <button type="button" data-view="agent" data-unlock="13">Agent</button>
       <button type="button" data-view="glossary">Glossary</button>
     </nav>
     <button type="button" class="level-pill" id="level-pill" title="Your level">Level 1</button>
+    <button type="button" class="icon-btn gear" id="settings-btn" data-view-btn="settings" title="AI settings" aria-label="AI settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+    </button>
 
     <div class="status-group" aria-label="Connection status">
       <span class="status-item" id="st-ws" title="Dashboard WebSocket"><i class="dot"></i><span>WS</span></span>
@@ -145,12 +155,110 @@
         <button type="button" data-tab="mix" data-unlock="5">Mixer</button>
         <button type="button" data-tab="luck" data-unlock="6">Luck test</button>
         <button type="button" data-tab="backtest" data-unlock="7">Backtest</button>
+        <button type="button" data-tab="portfolio" data-unlock="10">Portfolio</button>
+        <button type="button" data-tab="factors" data-unlock="10">Factors</button>
+        <button type="button" data-tab="ml" data-unlock="11">ML</button>
       </nav>
       <section class="lab-pane" id="lab-stats" data-unlock="4"></section>
       <section class="lab-pane" id="lab-corr" data-unlock="5"></section>
       <section class="lab-pane" id="lab-mix" data-unlock="5"></section>
       <section class="lab-pane" id="lab-luck" data-unlock="6"></section>
       <section class="lab-pane" id="lab-backtest" data-unlock="7"></section>
+      <section class="lab-pane" id="lab-portfolio" data-unlock="10"></section>
+      <section class="lab-pane" id="lab-factors" data-unlock="10"></section>
+      <section class="lab-pane" id="lab-ml" data-unlock="11"></section>
+    </div>
+  </main>
+
+  <main class="codelab page" id="code">
+    <div class="code-layout">
+      <aside class="code-list" id="code-list"></aside>
+      <section class="code-main">
+        <h1 id="code-title">Code Lab</h1>
+        <div class="code-task" id="code-task"></div>
+        <textarea id="code-editor" class="code-editor" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Python code"></textarea>
+        <div class="btn-row-left code-btns">
+          <button type="button" class="btn btn-primary" id="code-run" title="Cmd/Ctrl + Enter">Run</button>
+          <button type="button" class="btn btn-buy" id="code-check">Check my answer</button>
+          <button type="button" class="btn btn-ghost" id="code-reset">Reset</button>
+        </div>
+        <div class="code-strategy" id="code-strategy" hidden>
+          <div class="lab-form">
+            <label>Test on <select id="code-sym"></select></label>
+            <button type="button" class="btn btn-buy" id="code-test">Test strategy</button>
+            <label>Name <input id="code-sname" maxlength="40" placeholder="e.g. 20/100 trend"></label>
+            <button type="button" class="btn" id="code-save">Save</button>
+            <span class="muted" id="code-smsg"></span>
+          </div>
+          <p class="muted">Saved strategies:</p><ul class="code-saved" id="code-saved"></ul>
+        </div>
+        <div class="code-assist">
+          <span class="muted">AI pair-programmer:</span>
+          <button type="button" class="btn btn-sm" data-assist="explain">Explain</button>
+          <button type="button" class="btn btn-sm" data-assist="hint">Hint</button>
+          <button type="button" class="btn btn-sm" data-assist="fix" id="code-fix">Fix it</button>
+          <input id="code-q" placeholder="Or ask a question about this code…" maxlength="500">
+          <button type="button" class="btn btn-sm" data-assist="ask">Ask</button>
+        </div>
+        <div id="code-ai"></div>
+        <div id="code-out" class="code-out"></div>
+      </section>
+    </div>
+  </main>
+
+  <main class="research page" id="research">
+    <div class="lab-inner">
+      <header class="lab-head"><h1>Research</h1>
+        <p>An AI analyst that reads SEC filings and news, with every number checked against the source. <span id="rs-route"></span></p></header>
+      <div class="lab-box">
+        <h3>1. Read a filing</h3>
+        <div class="lab-form"><label>Company <select id="rs-ticker"></select></label>
+          <label class="switch-row"><input type="checkbox" id="rs-anon"> Hide the company name and dates from the AI</label></div>
+        <div id="rs-filings"></div>
+      </div>
+      <div id="rs-result"></div>
+      <div class="two-col">
+        <div class="lab-box"><h3>2. Score the news</h3><div class="lab-form"><label>Asset <select id="rs-news-sym"></select></label>
+          <button type="button" class="btn" id="rs-news-go">Score the news</button></div><div id="rs-news"></div></div>
+        <div class="lab-box"><h3>3. Does the AI already know?</h3><p>Ask the AI, with no documents, what happened after a past date for the company above.</p>
+          <div class="lab-form"><label>Date <input type="date" id="rs-mem-date" value="2024-05-22"></label>
+          <button type="button" class="btn" id="rs-mem-go">Test its memory</button></div><div id="rs-mem"></div></div>
+      </div>
+      <div class="lab-box"><h3>4. Event study: do earnings scores predict the move?</h3>
+        <div class="lab-form"><label>Releases <select id="rs-count"><option>4</option><option selected>6</option><option>8</option><option>12</option></select></label>
+          <label>Days after <select id="rs-horizon"><option>1</option><option selected>5</option><option>20</option></select></label>
+          <label class="switch-row"><input type="checkbox" id="rs-study-anon" checked> Anonymise</label>
+          <button type="button" class="btn btn-primary" id="rs-study-go">Run event study</button></div>
+        <div id="rs-study"></div></div>
+    </div>
+  </main>
+
+  <main class="agentpage page" id="agent">
+    <div class="lab-inner">
+      <header class="lab-head"><h1>Agent</h1>
+        <p>Research → signal → risk check → AI check → proposal. Rules set the size; the AI can only flag concerns; you approve.</p></header>
+      <div class="lab-box ag-kill-box">
+        <div><b>Kill switch</b><p class="muted">Stops the agent, turns off auto-trading, cancels proposals and waiting orders.</p>
+          <label class="switch-row"><input type="checkbox" id="ag-sell"> Also sell the agent's positions</label></div>
+        <button type="button" class="btn btn-danger" id="ag-kill">Kill switch</button>
+        <p class="muted" id="ag-killmsg"></p>
+      </div>
+      <div class="lab-box"><h3>Settings</h3><div id="ag-config"></div></div>
+      <div class="lab-box"><h3>Waiting for your approval</h3><div id="ag-pending"></div></div>
+      <div class="two-col">
+        <div class="lab-box"><h3>Recent decisions</h3><div id="ag-recent"></div></div>
+        <div class="lab-box"><h3>Run log</h3><div id="ag-log"></div></div>
+      </div>
+      <div class="lab-box" id="capstone"><h3>Capstone: 4 weeks against SPY</h3><div id="cap-body"></div></div>
+    </div>
+  </main>
+
+  <main class="settingspage page" id="settings">
+    <div class="lab-inner">
+      <header class="lab-head"><h1>Settings</h1><p>Which AI does what. Your local model is the default: free and private.</p></header>
+      <div class="lab-box"><h3>AI models</h3><div id="set-ai"></div></div>
+      <div class="lab-box"><h3>Data sources</h3><p class="muted">US stocks: Yahoo Finance (may be delayed up to 15 min). Crypto: Binance.
+        Filings: SEC EDGAR (set SEC_USER_AGENT in .env to your name and email, as SEC asks). News: Yahoo Finance.</p></div>
     </div>
   </main>
 
