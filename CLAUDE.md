@@ -45,7 +45,11 @@ toggling indicators, using the order ticket) go through `POST /api/learn/events`
 - **Protect the user by default.** Conservative risk limits, auto-trading hidden until level 13 and opted in, no
   implied guaranteed profit. This is paper trading. The agent proposes and the learner approves (auto mode is
   opt-in at level 13); rules set trade sizes, the LLM may only flag concerns. Keep the kill switch working.
-- **AI is local first.** All LLM calls go through `app/llm.py` (`engine.llm.chat(task, ...)`): Ollama by default,
+- **AI is optional (off by default).** Every feature must work with `engine.llm.enabled == False`: then
+  `llm.chat` raises `AIOff`, the status loop doesn't contact Ollama, and callers use their rule-based path
+  (`rule_based_analysis`, `rule_explanation`, coach rules, `research.rule_extract` / `lexicon_score`,
+  `codelab.rule_assist`, `Agent._rule_check`). Add a rule path for any new AI feature.
+- **When AI is on, it's local first.** All LLM calls go through `app/llm.py` (`engine.llm.chat(task, ...)`): Ollama by default,
   OpenRouter only for tasks the learner ticked, under their monthly cap, falling back to Ollama. Never send the key to
   the browser. Learner and AI code only runs through `codelab.run_code` (sandboxed, time-limited).
 - **Check what the AI says.** Numbers an LLM produces must be verified against facts (`verify_extraction` for filings,

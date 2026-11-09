@@ -193,7 +193,7 @@
           <p class="muted">Saved strategies:</p><ul class="code-saved" id="code-saved"></ul>
         </div>
         <div class="code-assist">
-          <span class="muted">AI pair-programmer:</span>
+          <span class="muted" id="code-help-label">Help:</span>
           <button type="button" class="btn btn-sm" data-assist="explain">Explain</button>
           <button type="button" class="btn btn-sm" data-assist="hint">Hint</button>
           <button type="button" class="btn btn-sm" data-assist="fix" id="code-fix">Fix it</button>
@@ -209,7 +209,7 @@
   <main class="research page" id="research">
     <div class="lab-inner">
       <header class="lab-head"><h1>Research</h1>
-        <p>An AI analyst that reads SEC filings and news, with every number checked against the source. <span id="rs-route"></span></p></header>
+        <p>Read SEC filings and news as data, with every number checked against the source. <span id="rs-route"></span></p></header>
       <div class="lab-box">
         <h3>1. Read a filing</h3>
         <div class="lab-form"><label>Company <select id="rs-ticker"></select></label>
@@ -236,7 +236,7 @@
   <main class="agentpage page" id="agent">
     <div class="lab-inner">
       <header class="lab-head"><h1>Agent</h1>
-        <p>Research → signal → risk check → AI check → proposal. Rules set the size; the AI can only flag concerns; you approve.</p></header>
+        <p>Research → signal → risk check → proposal. Rules set the size; the risk check (rules, plus the AI if it's on) can only flag concerns; you approve.</p></header>
       <div class="lab-box ag-kill-box">
         <div><b>Kill switch</b><p class="muted">Stops the agent, turns off auto-trading, cancels proposals and waiting orders.</p>
           <label class="switch-row"><input type="checkbox" id="ag-sell"> Also sell the agent's positions</label></div>
@@ -255,8 +255,8 @@
 
   <main class="settingspage page" id="settings">
     <div class="lab-inner">
-      <header class="lab-head"><h1>Settings</h1><p>Which AI does what. Your local model is the default: free and private.</p></header>
-      <div class="lab-box"><h3>AI models</h3><div id="set-ai"></div></div>
+      <header class="lab-head"><h1>Settings</h1><p>AI is optional. The whole app works without it.</p></header>
+      <div class="lab-box"><h3>AI</h3><div id="set-ai"></div></div>
       <div class="lab-box"><h3>Data sources</h3><p class="muted">US stocks: Yahoo Finance (may be delayed up to 15 min). Crypto: Binance.
         Filings: SEC EDGAR (set SEC_USER_AGENT in .env to your name and email, as SEC asks). News: Yahoo Finance.</p></div>
     </div>

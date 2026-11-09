@@ -223,6 +223,8 @@ def test_persistence_roundtrip(client):
 
 
 def test_advice_gives_one_plain_action(client, monkeypatch):
+    monkeypatch.setattr(type(main.engine.llm), "enabled", property(lambda self: True))  # AI on for this test
+
     async def history(*_):
         return [{"time": 1_700_000_000 + i * 3600, "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1}
                 for i in range(100)]
@@ -315,3 +317,15 @@ def test_risk_sized_and_limit_orders(client):
     assert {a["symbol"]: a["kind"] for a in s["assets"]} == {"BTCUSDT": "crypto", "ETHUSDT": "crypto"}
     assert "us_market" in s["status"] and s["orders"] == []
     client.post("/api/account/reset")
+
+
+def test_ai_off_by_default_uses_rules(client):
+    s = client.get("/api/ai/settings").json()
+    assert s["enabled"] is False
+    assert client.get("/api/state").json()["status"]["ai_enabled"] is False
+    main.engine.market.candles["BTCUSDT"] = [
+        {"time": 1_700_000_000 + i * 60, "open": 100 + i * 0.1, "high": 101 + i * 0.1, "low": 99 + i * 0.1,
+         "close": 100 + i * 0.1, "volume": 1.0, "closed": True} for i in range(120)]
+    a = client.post("/api/ai/analyze/BTCUSDT").json()
+    assert a["source"] == "rules" and a["recommendation"] in ("buy", "sell", "hold")
+    main.engine.market.candles["BTCUSDT"] = []

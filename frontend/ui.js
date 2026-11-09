@@ -97,6 +97,8 @@ export function armed(btn, text = "Click again to confirm") {
 
 export function aiSource(src, cost) {
   if (!src) return "";
+  if (src === "rules") return "Worked out by the app's rules (AI is off), free";
+  if (src === "recorded") return "A recorded example (AI is off)";
   const where = src.startsWith("cloud:") ? `cloud model ${src.slice(6)}` : src.startsWith("local:") ? `your local AI (${src.slice(6)})` : src;
   return `Answered by ${esc(where)}${cost ? ` · cost $${Number(cost).toFixed(4)}` : src.startsWith("local:") ? " · free" : ""}`;
 }

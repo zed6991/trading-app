@@ -48,7 +48,12 @@ happened and the lesson in it. Experienced users can "Unlock everything" at the 
   the trade (risk % of equity ÷ a stop 2 daily standard deviations away, capped by the safety net) → LLM may flag a
   concern → proposal. Approve mode by default; auto mode only at Level 13. Kill switch cancels everything and can sell
   the agent's positions. Every run is logged. **Capstone:** write a plan, run 28 days, get a report vs SPY.
-- **Settings:** the local Ollama model is the default for every AI job. Optionally send chosen jobs (code, research,
+- **AI is optional and off by default.** With AI off (Settings → Use AI), nothing contacts Ollama or OpenRouter, and
+  every feature works on rules: Practice suggestions and the Charts analyst use indicator rules, trade explanations and
+  the coach are rule-based, Research reads filings with a pattern-based reader (exact sentences with the headline
+  figures, word-list tone) and scores news by word lists, the code tutor explains Python errors and gives written
+  hints, the agent uses a rule-based risk check, and the "does the AI remember?" step shows a recorded real test.
+- **Settings:** when AI is on, the local Ollama model is the default for every AI job. Optionally send chosen jobs (code, research,
   agent, coach) to an OpenRouter model with a monthly dollar cap; spend is tracked per call and anything over the cap
   or failing falls back to the local model.
 

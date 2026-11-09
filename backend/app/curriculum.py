@@ -1539,10 +1539,10 @@ LEVELS: list[dict[str, Any]] = [
             },
         ],
         "challenges": [
-            _ch("read-filing", "Have the AI read a filing", "Open Research, pick a company and an earnings release, and press Analyse.",
+            _ch("read-filing", "Read a filing as data", "Open Research, pick a company and an earnings release, and press Analyse.",
                 "research_filing"),
             _ch("score-news", "Score recent news", "In Research, press 'Score the news' for any asset.", "research_news"),
-            _ch("memory-test", "Test the AI's memory", "In Research, run 'Does the AI already know?' for a past date.",
+            _ch("memory-test", "See the AI-remembers trap", "In Research, use 'Does the AI already know?' (with AI off it shows a recorded real test).",
                 "research_memory"),
             _ch("event-study", "Run an event study", "In Research, run an event study on earnings releases.",
                 "research_study"),

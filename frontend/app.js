@@ -923,6 +923,11 @@ function renderStatus() {
   setStatusItem("#st-stocks", st.stocks_connected ? (us.open ? "ok" : "warn") : "bad",
     `${st.stocks_connected ? "US stock prices loading (Yahoo Finance, may be delayed up to 15 min)" : "US stock prices unavailable"}. ${us.label || ""}`);
   const model = st.ai_model || "";
+  if (st.ai_enabled === false) {
+    $("#st-ai-label").textContent = "AI off";
+    setStatusItem("#st-ai", "", "AI is switched off in Settings: the app uses its rule-based analysis");
+    return;
+  }
   $("#st-ai-label").textContent = model ? `AI · ${model.length > 22 ? `${model.slice(0, 21)}…` : model}` : "AI";
   setStatusItem("#st-ai", st.ai_available ? "ok" : "warn",
     st.ai_available ? `Ollama model ${model} available` : `Ollama model ${model || ""} unavailable — rule-based fallback in use`);

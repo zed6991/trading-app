@@ -97,18 +97,18 @@ def html_to_text(raw: str) -> str:
     return text.strip()
 
 
-def _focus(text: str, form: str) -> str:
+def _focus(text: str, form: str, max_chars: int = MAX_CHARS) -> str:
     """The part of a long report worth reading: Management's Discussion and Analysis (MD&A)."""
     if form in ("10-Q", "10-K"):
         hits = [m.start() for m in re.finditer(r"(?i)management.s discussion and analysis", text)]
         if len(hits) >= 2:
-            return text[hits[1]:hits[1] + MAX_CHARS]  # first hit is the table of contents
+            return text[hits[1]:hits[1] + max_chars]  # first hit is the table of contents
         if hits:
-            return text[hits[0]:hits[0] + MAX_CHARS]
-    return text[:MAX_CHARS]
+            return text[hits[0]:hits[0] + max_chars]
+    return text[:max_chars]
 
 
-async def filing_text(cik: int, accession: str, document: str, form: str) -> dict:
+async def filing_text(cik: int, accession: str, document: str, form: str, max_chars: int = MAX_CHARS) -> dict:
     """Plain text of a filing. For an 8-K, prefer the press release exhibit (99.1), where the numbers are."""
     folder = f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession.replace('-', '')}"
     async with httpx.AsyncClient(timeout=30) as client:
@@ -126,7 +126,7 @@ async def filing_text(cik: int, accession: str, document: str, form: str) -> dic
                 pass
         raw = (await _sec_get(client, f"{folder}/{doc}")).text
     text = html_to_text(raw)
-    return {"text": _focus(text, form), "full_chars": len(text), "url": f"{folder}/{doc}"}
+    return {"text": _focus(text, form, max_chars), "full_chars": len(text), "url": f"{folder}/{doc}"}
 
 
 # ------------------------------------------------------------------------------------------ verification
@@ -235,13 +235,22 @@ class Researcher:
         cached = self._cache_get(key)
         if cached:
             return {**cached, "cached": True}
-        doc = await filing_text(info["cik"], accession, f["document"], f["form"])
+        # Without an AI, reading more costs nothing, so the rule-based reader gets a longer stretch of the filing.
+        doc = await filing_text(info["cik"], accession, f["document"], f["form"],
+                                MAX_CHARS if self.llm.enabled else 80_000)
         text = doc["text"]
         shown = anonymise(text, _short_name(info["name"]) + [info["ticker"]]) if anonymous else text
-        msgs = [{"role": "system", "content": EXTRACT_SYSTEM},
-                {"role": "user", "content": f"Document type: {f['label']}.\n\nDOCUMENT:\n{shown}\n\nReturn the JSON now."}]
-        reply = await self.llm.chat("research", msgs, max_tokens=2000, temperature=0.1)
-        checked = verify_extraction(reply["json"] or {}, shown)
+        if self.llm.enabled:
+            msgs = [{"role": "system", "content": EXTRACT_SYSTEM},
+                    {"role": "user", "content": f"Document type: {f['label']}.\n\nDOCUMENT:\n{shown}\n\nReturn the JSON now."}]
+            reply = await self.llm.chat("research", msgs, max_tokens=2000, temperature=0.1)
+            raw = reply["json"] or {}
+        else:
+            raw = rule_extract(shown)
+            reply = {"source": "rules", "cost_usd": 0.0, "latency_ms": 0}
+        checked = verify_extraction(raw, shown)
+        if "word_counts" in raw:
+            checked["word_counts"] = raw["word_counts"]
         out = {"ticker": info["ticker"], "company": info["name"], "filing": f, "url": doc["url"],
                "chars_read": len(text), "full_chars": doc["full_chars"], "anonymous": anonymous,
                "source": reply["source"], "cost_usd": reply["cost_usd"], "latency_ms": reply["latency_ms"], **checked}
@@ -261,6 +270,14 @@ class Researcher:
         cached = self._cache_get(key)
         if cached:
             return cached
+        if not self.llm.enabled:
+            for it in items:
+                it["score"], p, n = lexicon_score(it["title"])
+                it["why"] = f"{p} positive, {n} negative words" if p or n else "no strong words"
+            out = {"ticker": ticker, "items": items, "average": round(float(np.mean([i["score"] for i in items])), 2),
+                   "source": "rules", "cost_usd": 0.0}
+            self._cache_set(key, out)
+            return out
         listing = "\n".join(f"{i + 1}. {it['title']}" for i, it in enumerate(items))
         msgs = [{"role": "system", "content": (
             "Score each news headline for how good or bad it is for the stock of the named company, from -1 (very bad) "
@@ -284,6 +301,8 @@ class Researcher:
     async def memory_test(self, ticker: str, date: str) -> dict:
         """Ask the model, with NO documents, what happened to the stock after `date`. If it 'knows', backtests of
         LLM signals on that period are contaminated."""
+        if not self.llm.enabled:
+            return {**RECORDED_MEMORY, "example": True, "source": "recorded", "cost_usd": 0.0}
         name = assets.name(ticker)
         msgs = [{"role": "system", "content": "Answer from your own knowledge only. Be honest if you don't know. "
                                               'Respond with ONLY JSON: {"knows": true|false, "answer": "2-3 sentences"}'},
@@ -323,14 +342,160 @@ class Researcher:
             if s.std() > 0 and m.std() > 0:
                 corr = round(float(np.corrcoef(s, m)[0, 1]), 2)
             hit = round(float(np.mean([(si > 0) == (mi > 0) for si, mi in pairs if si != 0])) * 100, 0) if any(p[0] for p in pairs) else None
+        scorer = "word-count score" if not self.llm.enabled else "AI's score"
         verdict = (f"With only {len(pairs)} events, any pattern here is mostly noise: you'd need dozens of companies "
                    "and years of releases before trusting it.")
         if corr is not None:
-            verdict = f"Correlation between the AI's score and the next {horizon} days' move: {corr:+.2f}. " + verdict
-        if not anonymous:
+            verdict = f"Correlation between the {scorer} and the next {horizon} days' move: {corr:+.2f}. " + verdict
+        if not anonymous and self.llm.enabled:
             verdict += (" This run showed the AI the company name and dates. It may remember what happened next, which "
                         "would make the result look better than it really is. Compare with the anonymised run.")
         self.db.set_kv("research:last_study", {"ticker": ticker, "anonymous": anonymous, "corr": corr})
         return {"ticker": ticker.upper(), "company": info["name"], "horizon": horizon, "anonymous": anonymous,
                 "rows": rows, "correlation": corr, "same_direction_pct": hit, "events": len(pairs),
                 "cost_usd": round(cost, 6), "verdict": verdict}
+
+
+# ------------------------------------------------------------------------------------------ no-AI reader
+# A small finance word list (in the spirit of the Loughran-McDonald dictionary). Word counting is crude, but it's
+# transparent, free and can't hallucinate. It's the baseline an LLM has to beat.
+POSITIVE = {
+    "record", "records", "growth", "grew", "grow", "growing", "increase", "increased", "increases", "increasing", "strong",
+    "stronger", "strength", "exceeded", "exceed", "beat", "beats", "raised", "raise", "higher", "improved", "improve",
+    "improvement", "expansion", "expanded", "gain", "gains", "profitable", "momentum", "robust", "outperformed",
+    "upgrade", "upgraded", "accelerated", "accelerating", "surge", "surged", "best", "all-time", "rebound", "rebounded",
+    "rally", "rallied", "jump", "jumped", "soar", "soared", "boost", "boosted", "win", "wins", "approval", "approved",
+    "breakthrough", "recovery", "resilient", "bargain", "tops", "upbeat", "optimistic",
+}
+NEGATIVE = {
+    "decline", "declined", "declines", "declining", "decrease", "decreased", "decreases", "loss", "losses", "weak",
+    "weaker", "weakness", "lower", "miss", "missed", "misses", "cut", "cuts", "reduced", "reduce", "impairment",
+    "restructuring", "layoffs", "layoff", "litigation", "lawsuit", "investigation", "probe", "downgrade", "downgraded",
+    "slowdown", "slowed", "headwind", "headwinds", "uncertain", "uncertainty", "challenging", "fell", "fall", "falls",
+    "drop", "dropped", "drops", "plunge", "plunged", "recall", "fraud", "warning", "warns", "delay", "delayed", "slump",
+    "slumped", "tumble", "tumbled", "sink", "sank", "rout", "fears", "fear", "concern", "concerns", "bankruptcy",
+    "default", "penalty", "fine", "fined", "selloff", "sell-off", "slips", "slipped", "worst", "distraction", "row",
+}
+_WORD = re.compile(r"[a-z][a-z'-]+")
+METRICS = [
+    ("Revenue", r"\b(total |net )?(revenue|revenues|net sales)\b"),
+    ("Net income", r"\bnet (income|earnings)\b"),
+    ("Earnings per share", r"\b(earnings|income) per (diluted )?share\b|\bEPS\b"),
+    ("Operating income", r"\boperating (income|profit)\b"),
+    ("Gross margin", r"\bgross margin"),
+    ("Operating margin", r"\boperating margin"),
+    ("Free cash flow", r"\bfree cash flow\b"),
+    ("Dividend", r"\bdividend\b"),
+    ("Buybacks / capital returned", r"\b(repurchase|buyback|returned)\b"),
+]
+GUIDANCE = re.compile(r"(?i)\b(expects?|expected|outlook|guidance|anticipates?|forecasts?|projects?)\b")
+RISK = re.compile(r"(?i)\b(risk|uncertain|headwind|decline|tariff|litigation|regulat|competition|supply)\w*")
+_NUMBER = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?(?:\s(?:billion|million|thousand)|[BMK]\b)?|\d[\d,]*(?:\.\d+)?\s?(?:%|percent)")
+_SCALED = re.compile(r"billion|million|thousand|[BMK]$|\d,\d{3}")
+SIZE_METRICS = {"Revenue", "Net income", "Operating income", "Free cash flow", "Buybacks / capital returned"}
+
+
+def lexicon_score(text: str) -> tuple[float, int, int]:
+    """Sentiment from -1 to 1 by counting positive and negative finance words."""
+    words = _WORD.findall((text or "").lower())
+    p = sum(w in POSITIVE for w in words)
+    n = sum(w in NEGATIVE for w in words)
+    return (round((p - n) / (p + n + 2), 2), p, n)
+
+
+BOILERPLATE = re.compile(r"(?i)forward-looking|securities act|exchange act of 1934|safe harbor|when used in this report|"
+                         r"the terms .{0,40} mean|incorporated (herein )?by reference|should be read in conjunction")
+
+
+def split_sentences(text: str) -> list[str]:
+    parts = re.split(r"(?<=[.!?])\s+(?=[A-Z“\"(•])|\n+", text)
+    out = []
+    for s in parts:
+        s = " ".join(s.split())
+        if 25 <= len(s) <= 420 and "|" not in s and not s.isupper() and not BOILERPLATE.search(s):
+            out.append(s)
+    return out
+
+
+def _pick_number(sentence: str, m: re.Match, per_share: bool = False):
+    """The figure that belongs to the metric: the closest after the keyword (dollars before percentages), else just
+    before it. Per-share metrics want a small dollar amount like $2.10."""
+    nums = list(_NUMBER.finditer(sentence))
+    if per_share:
+        nums = [n for n in nums if n.group(0).startswith("$") and not re.search(r"billion|million|thousand", n.group(0))]
+    after = [n for n in nums if 0 <= n.start() - m.end() <= 100]
+    dollars = [n for n in after if n.group(0).startswith("$")]
+    if dollars and not per_share:
+        return dollars[0]
+    if after:
+        return after[0]
+    before = [n for n in nums if 0 <= m.start() - n.end() <= 60]
+    return before[-1] if before else None
+
+
+def _quote_around(sentence: str, start: int, words: int = 28) -> str:
+    """An exact slice of `sentence` of about `words` words containing position `start`."""
+    if len(sentence.split()) <= words:
+        return sentence
+    left = sentence.rfind(" ", 0, max(0, start - 90))
+    left = 0 if left < 0 else left + 1
+    right = sentence.find(" ", min(len(sentence), start + 120))
+    right = len(sentence) if right < 0 else right
+    return sentence[left:right]
+
+
+def rule_extract(text: str) -> dict:
+    """No-AI reading of a filing: exact sentences with the key numbers, word-count sentiment, guidance and risks.
+    Every quote is copied verbatim, so `verify_extraction` can confirm all of it."""
+    sents = split_sentences(text)
+    numbers, used, summary = [], set(), []
+    for label, pattern in METRICS:
+        rx = re.compile(pattern, re.IGNORECASE)
+        best = None  # (quality, sentence, number)
+        for s in sents:
+            m = rx.search(s)
+            if not m or s in used or re.search(r"(?i)par value|\bpar\b", s):
+                continue
+            num = _pick_number(s, m, per_share=label in ("Earnings per share", "Dividend"))
+            if not num:
+                continue
+            v = num.group(0)
+            if label in SIZE_METRICS:
+                quality = 2 if v.startswith("$") and _SCALED.search(v) else 1 if v.endswith(("%", "percent")) else 0
+            else:
+                quality = 2 if v.startswith("$") or label.endswith("margin") else 1
+            if re.search(r"(?i)\b(quarter|reported|posted|was|were|totaled)\b", s):
+                quality += 0.5
+            if best is None or quality > best[0]:
+                best = (quality, s, num)
+            if quality >= 2.5:
+                break
+        if best is None or best[0] < 1:
+            continue
+        _, s, num = best
+        quote = _quote_around(s, num.start())
+        if num.group(0) not in quote:
+            continue
+        numbers.append({"label": label, "value": num.group(0), "quote": quote})
+        used.add(s)
+        if len(summary) < 3:
+            summary.append(s)
+        if len(numbers) >= 6:
+            break
+    guidance = next((s for s in sents if GUIDANCE.search(s) and _NUMBER.search(s)), None)
+    risks = [s[:200] for s in sents if RISK.search(s) and s not in used][:3]
+    score, pos, neg = lexicon_score(" ".join(sents[:200]))
+    if not summary:
+        summary = sents[:2]
+    return {"summary": " ".join(summary)[:900], "sentiment": score, "key_numbers": numbers, "risks": risks,
+            "guidance": guidance, "word_counts": {"positive": pos, "negative": neg}}
+
+
+# A real answer recorded on 9 Nov 2026 from a local model (qwen3.6, no documents given), shown when AI is off.
+RECORDED_MEMORY = {
+    "ticker": "NVDA", "date": "2024-05-22", "knows": True, "recorded": "2026-11-09", "model": "qwen3.6-35b (local)",
+    "answer": ("Following its earnings report on May 22, 2024, Nvidia's stock price surged significantly, rising "
+               "approximately 24% in after-hours trading and continuing to climb in the subsequent days. This sharp "
+               "increase was driven by better-than-expected financial results and strong forward guidance, "
+               "reinforcing its dominance in the AI chip market."),
+}

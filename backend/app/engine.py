@@ -248,6 +248,11 @@ class TradingEngine:
             await asyncio.sleep(STATUS_INTERVAL)
 
     async def refresh_ai_health(self) -> dict:
+        if not self.llm.enabled:  # AI off: don't contact Ollama at all
+            self.ai_health = {"available": False, "model": self.settings.ollama_model, "error": "AI is switched off",
+                              "off": True}
+            self.llm.local_available = False
+            return self.ai_health
         try:
             self.ai_health = await asyncio.wait_for(self.ai.health(), 10)
             self.llm.local_available = bool(self.ai_health.get("available"))
@@ -282,6 +287,7 @@ class TradingEngine:
             "stocks_connected": bool(self.market.stocks_connected) if on else False,
             "us_market": market_status(),
             "ai_available": bool(self.ai_health.get("available")),
+            "ai_enabled": self.llm.enabled,
             "ai_model": self.ai_health.get("model") or self.settings.ollama_model,
         }
 
@@ -770,7 +776,13 @@ class TradingEngine:
         candles = candles[-AI_CANDLES:]
         snap = indicators.snapshot(candles)
         position = next((p for p in self.account()["positions"] if p["symbol"] == symbol), None)
-        analysis = await self.ai.analyze(symbol, candles, snap, position)
+        if self.llm.enabled:
+            analysis = await self.ai.analyze(symbol, candles, snap, position)
+        else:
+            from app.ai import rule_based_analysis
+
+            analysis = {"ts": time.time(), "symbol": symbol, **rule_based_analysis(symbol, candles, snap, position),
+                        "source": "rules", "latency_ms": 0}
         cur = self.db.execute(
             "INSERT INTO analyses(ts, symbol, source, bias, confidence, payload) VALUES(?,?,?,?,?,?)",
             (analysis.get("ts", time.time()), symbol, analysis.get("source", "unknown"), analysis.get("bias", "neutral"),
@@ -799,7 +811,7 @@ class TradingEngine:
         facts = trade_facts(trade, entry, coin_name(trade["symbol"]))
         base = rule_explanation(facts)
         result = {**base, "trade_id": trade["id"], "source": "rules"}
-        if self.ai_health.get("available"):
+        if self.llm.enabled and self.ai_health.get("available"):
             improved = await self.ai.explain_trade(facts, base, self.learn.level())
             if improved:
                 result.update(improved)

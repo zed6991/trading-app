@@ -7,6 +7,7 @@ let info = null; // {exercises, strategy_template, sandboxed, symbols}
 let current = null; // {kind: "exercise"|"scratch"|"strategy", id?}
 let last = null; // last run result (for the AI)
 let busy = false;
+let aiOn = false;
 
 const key = () => `code:${current.kind}:${current.id || ""}`;
 const editor = () => $("code-editor");
@@ -48,7 +49,7 @@ function open(c) {
       : `<p>Try anything. <code>qp.prices(symbol, years)</code>, <code>qp.chart(...)</code>, <code>qp.table(...)</code> and
          <code>qp.symbols()</code> are available, plus pandas, numpy and scikit-learn.</p>`;
   $("code-check").hidden = !ex;
-  $("code-fix").hidden = !!ex;
+  $("code-fix").hidden = !!ex || !aiOn;
   $("code-strategy").hidden = c.kind !== "strategy";
   $("code-out").innerHTML = "";
   $("code-ai").innerHTML = "";
@@ -224,6 +225,12 @@ function bind() {
 }
 
 async function init() {
+  api("/api/ai/settings").then((s) => {
+    aiOn = s.enabled;
+    $("code-fix").hidden = !s.enabled || current?.kind === "exercise";
+    $("code-help-label").textContent = s.enabled ? "AI pair-programmer:" : "Help:";
+    $("code-q").placeholder = s.enabled ? "Or ask a question about this code…" : "Questions need the AI (off). Use Explain and Hint.";
+  }).catch(() => {});
   if (info) return;
   try {
     const [data, state] = await Promise.all([api("/api/code/exercises"), api("/api/state")]);

@@ -630,7 +630,7 @@ async def ai_settings_update(body: AISettings):
 # ---------------------------------------------------------------------- Code Lab (levels 8-9)
 def _exercises() -> list[dict]:
     done = set(engine.learn.p["sets"].get("ex8", [])) | set(engine.learn.p["sets"].get("ex9", []))
-    return [{**{k: e[k] for k in ("id", "level", "title", "task", "starter")}, "done": e["id"] in done}
+    return [{**{k: e[k] for k in ("id", "level", "title", "task", "starter", "hints")}, "done": e["id"] in done}
             for e in codelab.EXERCISES]
 
 
@@ -682,6 +682,10 @@ async def code_assist(body: CodeAssist):
     mode = body.mode
     if body.exercise_id and mode == "fix":
         mode = "hint"  # exercises are for learning: hints, not answers
+    if not engine.llm.enabled:
+        engine.learn.record("code_assist")
+        return codelab.rule_assist(body.code, body.error, "", codelab.EXERCISE_BY_ID.get(body.exercise_id or ""),
+                                   mode, body.question)
     user = (f"{task}Their question: {body.question or '(none)'}\n\nCODE:\n{body.code[:12000]}\n\n"
             f"OUTPUT:\n{body.output[:3000]}\n\nERROR:\n{body.error[:3000] or '(none)'}")
     reply = await engine.llm.chat("code", [{"role": "system", "content": CODE_SYSTEM.format(level=engine.learn.level(), mode=mode)},

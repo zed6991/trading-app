@@ -924,3 +924,4 @@ body.view-code .codelab { display: block; }
 .l-progress-fill { transition: width .3s; }
 #rs-filings .lab-table td, #rs-filings .lab-table th { text-align: left; }
 #rs-filings .lab-table td:last-child { text-align: right; }
+.set-master { font-size: 16px; margin-bottom: 4px; }

@@ -30,7 +30,7 @@ function renderConfig() {
     <div class="btn-row-left">
       <button type="button" class="btn btn-primary" id="ag-save">Save settings</button>
       <button type="button" class="btn" id="ag-run">Run now</button>
-      <span class="muted" id="ag-msg">${c.enabled && state.next_run ? `Next scheduled run ${new Date(state.next_run * 1000).toLocaleTimeString()}.` : ""} AI check: ${esc(state.ai_route)}</span>
+      <span class="muted" id="ag-msg">${c.enabled && state.next_run ? `Next scheduled run ${new Date(state.next_run * 1000).toLocaleTimeString()}.` : ""} Risk check: ${state.ai_route === "off" ? "rules (AI is off)" : `rules + AI (${esc(state.ai_route)})`}</span>
     </div>`;
   $("ag-watch").addEventListener("change", (e) => e.target.closest(".chip")?.classList.toggle("on", e.target.checked));
   $("ag-save").addEventListener("click", save);
@@ -44,7 +44,7 @@ function proposalCard(p) {
       <span class="mono">${money(p.notional)}</span>${p.stop_loss ? `<span class="muted">stop ${money(p.stop_loss)}${p.risk_dollars ? ` · risks ~${money(p.risk_dollars)}` : ""}</span>` : ""}
       <span class="muted">${ago(p.created)}</span></header>
     <ul>${p.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>
-    <p class="ag-ai ${p.flagged ? "down" : ""}">${p.flagged ? "⚠ AI check flagged this: " : "AI check: "}${esc(ai.note || "no note")}</p>
+    <p class="ag-ai ${p.flagged ? "down" : ""}">${p.flagged ? "⚠ Flagged: " : ""}${esc(ai.note || "no note")}${ai.source && ai.source !== "rules" && ai.source !== "none" ? ` <span class="muted">(AI check)</span>` : ""}</p>
     ${p.status === "pending" ? `<div class="btn-row-left"><button type="button" class="btn btn-buy btn-sm" data-approve="${p.id}">Approve</button>
       <button type="button" class="btn btn-ghost btn-sm" data-reject="${p.id}">Reject</button></div>`
       : `<p class="muted">${esc(p.status)}${p.error ? `: ${esc(p.error)}` : ""}${p.decided ? ` · ${ago(p.decided)}` : ""}</p>`}

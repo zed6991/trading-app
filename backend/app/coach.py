@@ -196,6 +196,9 @@ class Coach:
         return bool(llm and llm.uses_cloud("coach"))
 
     def _ai_ready(self) -> bool:
+        llm = getattr(self.engine, "llm", None)
+        if llm is not None and not llm.enabled:
+            return False
         return self._cloud() or bool(self.engine.ai_health.get("available"))
 
     async def _ask(self, messages: list[dict], temperature: float) -> tuple[str, str]:
@@ -440,8 +443,9 @@ class Coach:
         """Offline coach: defines glossary words, gives the next step or the weekly review."""
         text = message.lower()
         offline = not self._ai_ready()
-        note = (" (The AI coach is offline because the local AI model isn't running, so I can only define words, "
-                "give your next step and review your trades.)") if offline else ""
+        off = getattr(getattr(self.engine, "llm", None), "enabled", True) is False
+        note = ("" if off else " (The AI coach is offline because the local AI model isn't running, so I can only define "
+                "words, give your next step and review your trades.)") if offline else ""
         if re.search(r"\b(review|how am i doing|how did i do|my week|my trades|performance)\b", text):
             r = await self.review(7)
             parts = [r["headline"]] + [f"Going well: {x}" for x in r["went_well"][:1]] + \

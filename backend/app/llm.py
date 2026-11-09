@@ -30,7 +30,7 @@ CLOUD_MODELS = [
     {"id": "qwen/qwen3-coder-next", "label": "Qwen3 Coder Next (code)"},
     {"id": "deepseek/deepseek-v4-flash", "label": "DeepSeek V4 Flash (cheap, sometimes slow)"},
 ]
-DEFAULTS = {"cloud_enabled": False, "cloud_model": CLOUD_MODELS[0]["id"], "cloud_tasks": ["code", "research", "agent"],
+DEFAULTS = {"ai_enabled": False, "cloud_enabled": False, "cloud_model": CLOUD_MODELS[0]["id"], "cloud_tasks": ["code", "research", "agent"],
             "monthly_cap_usd": 2.0}
 KV_SETTINGS = "ai_settings"
 KV_SPEND = "ai_spend"
@@ -42,6 +42,10 @@ def _month() -> str:
 
 class LLMError(RuntimeError):
     """No model could answer."""
+
+
+class AIOff(LLMError):
+    """AI is switched off in Settings; callers should use their rule-based path."""
 
 
 # Keep num_ctx equal to the rest of the app (ai.py uses 8192): a different value makes Ollama reload the model.
@@ -61,8 +65,14 @@ class LLMRouter:
             out.update({k: v for k, v in raw.items() if k in DEFAULTS})
         return out
 
+    @property
+    def enabled(self) -> bool:
+        return bool(self.settings()["ai_enabled"])
+
     def update(self, partial: dict) -> dict:
         s = self.settings()
+        if partial.get("ai_enabled") is not None:
+            s["ai_enabled"] = bool(partial["ai_enabled"])
         if "cloud_enabled" in partial and partial["cloud_enabled"] is not None:
             if partial["cloud_enabled"] and not self.key():
                 raise ValueError("No OpenRouter key found. Set OPENROUTER_API_KEY or create ~/.config/openrouter/api_key.")
@@ -111,18 +121,20 @@ class LLMRouter:
     def public(self) -> dict:
         s = self.settings()
         sp = self.spend()
-        return {**s, "key_present": bool(self.key()), "spend_usd": round(sp["usd"], 4), "spend_calls": sp["calls"],
+        return {**s, "enabled": bool(s["ai_enabled"]), "key_present": bool(self.key()), "spend_usd": round(sp["usd"], 4), "spend_calls": sp["calls"],
                 "month": sp["month"], "cap_reached": sp["usd"] >= s["monthly_cap_usd"],
                 "local_model": self.ollama_model, "local_available": self.local_available,
                 "models": CLOUD_MODELS, "tasks": list(TASKS)}
 
     def uses_cloud(self, task: str) -> bool:
         s = self.settings()
-        return bool(s["cloud_enabled"] and task in s["cloud_tasks"] and self.key()
+        return bool(s["ai_enabled"] and s["cloud_enabled"] and task in s["cloud_tasks"] and self.key()
                     and self.spend()["usd"] < s["monthly_cap_usd"])
 
     def route(self, task: str) -> str:
-        """Who would answer a `task` right now: 'cloud:<model>', 'local:<model>' or 'none'."""
+        """Who would answer a `task` right now: 'off', 'cloud:<model>', 'local:<model>' or 'none'."""
+        if not self.enabled:
+            return "off"
         if self.uses_cloud(task):
             return f"cloud:{self.settings()['cloud_model']}"
         return f"local:{self.ollama_model}" if self.local_available else "none"
@@ -132,6 +144,8 @@ class LLMRouter:
                    max_tokens: int = 1500, num_ctx: int = 8192) -> dict:
         """Ask a model. Returns {"text", "json" (dict or None), "source", "cost_usd", "latency_ms"}.
         Raises LLMError if neither the cloud (when enabled for the task) nor the local model answers."""
+        if not self.enabled:
+            raise AIOff("AI is switched off in Settings.")
         start = time.perf_counter()
         errors = []
         if self.uses_cloud(task):

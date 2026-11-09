@@ -137,7 +137,25 @@ class Agent:
         return state, f"{st['name'].replace('_', ' ')} is {'in (last signal: buy)' if state else 'out (last signal: sell)'}" \
             if last else f"{st['name']} state {state}"
 
+    @staticmethod
+    def _rule_check(facts: dict) -> dict:
+        """The no-AI risk review: plain rules on the same facts."""
+        concerns = []
+        news = facts.get("news_average")
+        if facts["side"] == "buy" and news is not None and news <= -0.3:
+            concerns.append(f"recent headlines lean negative (score {news:+.2f})")
+        if facts["side"] == "buy" and facts.get("vol_ratio") and facts["vol_ratio"] >= 1.8:
+            concerns.append(f"it's {facts['vol_ratio']:.1f}x as jumpy as its 1-year norm")
+        if not facts.get("market_open"):
+            concerns.append("the US market is closed, so a real order would wait for the open")
+        note = ("Rule check: " + "; ".join(concerns) + ".") if concerns else \
+            "Rule check: no red flags (news not clearly negative, volatility near normal, market open)."
+        flag = any(not c.startswith("the US market") for c in concerns)
+        return {"concern": flag, "note": note, "source": "rules", "cost_usd": 0.0}
+
     async def _ai_check(self, facts: dict) -> dict:
+        if not self.engine.llm.enabled:
+            return self._rule_check(facts)
         system = ("You are the risk reviewer for a paper-trading agent run by a learner. You get facts about ONE proposed "
                   "trade. Flag a concern only for a concrete reason in the facts (for example very negative recent news, "
                   "the market being closed, unusually high volatility, or a signal that contradicts the news). You can't "
@@ -184,7 +202,11 @@ class Agent:
                             step["news"] = {"error": f"news unavailable ({type(exc).__name__})"}
                     closes = np.array([c["close"] for c in candles[-61:]], dtype=float)
                     vol_d = float(np.std(closes[1:] / closes[:-1] - 1, ddof=1))
-                    step["risk"] = {"daily_vol_pct": round(vol_d * 100, 2)}
+                    long = np.array([c["close"] for c in candles[-253:]], dtype=float)
+                    vol_long = float(np.std(long[1:] / long[:-1] - 1, ddof=1))
+                    vol_ratio = vol_d / vol_long if vol_long > 0 else None
+                    step["risk"] = {"daily_vol_pct": round(vol_d * 100, 2),
+                                    "vol_ratio": round(vol_ratio, 2) if vol_ratio else None}
                     side = None
                     if state == 1 and not owned:
                         side = "buy"
@@ -230,12 +252,13 @@ class Agent:
                         proposal["reasons"].append("The US market is closed: approving fills at the last price (practice).")
                     facts = {"symbol": symbol, "side": side, "signal": why, "news_average": news and news.get("average"),
                              "headlines": step.get("news", {}).get("headlines"), "daily_volatility_pct": round(vol_d * 100, 2),
-                             "market_open": eng.market_open_for(symbol), "size_usd": proposal["notional"]}
+                             "market_open": eng.market_open_for(symbol), "size_usd": proposal["notional"],
+                             "vol_ratio": vol_ratio}
                     ai = await self._ai_check(facts)
                     proposal["ai"] = ai
                     proposal["flagged"] = ai["concern"]
                     step["ai"] = ai
-                    step["decision"] = f"proposed {side}" + (" (flagged by the AI check)" if ai["concern"] else "")
+                    step["decision"] = f"proposed {side}" + (" (flagged by the risk check)" if ai["concern"] else "")
                     new.append(proposal)
                 except Exception as exc:  # noqa: BLE001 - one bad symbol shouldn't stop the run
                     logger.exception("Agent step failed for %s", symbol)

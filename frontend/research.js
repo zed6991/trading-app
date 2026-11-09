@@ -4,6 +4,7 @@ import { $, api, esc, num, pct, tone, card, learnRefresh, term, aiSource, onView
 
 let assets = [];
 let ticker = "AAPL";
+let aiOn = false;
 
 const companies = () => assets.filter((a) => a.kind === "stock");
 
@@ -22,7 +23,11 @@ const TRUST = {
 function render() {
   const route = $("rs-route");
   api("/api/ai/settings").then((s) => {
-    route.innerHTML = s.cloud_enabled && s.cloud_tasks.includes("research") && !s.cap_reached
+    aiOn = s.enabled;
+    $("rs-mem-go").textContent = aiOn ? "Test its memory" : "Show a recorded example";
+    route.innerHTML = !s.enabled
+      ? "AI is off, so filings are read by a rule-based reader: it copies the sentences that report key figures and scores tone by counting positive and negative finance words."
+      : s.cloud_enabled && s.cloud_tasks.includes("research") && !s.cap_reached
       ? `Research uses the cloud model <b>${esc(s.cloud_model)}</b> (spent $${num(s.spend_usd, 4)} of your $${num(s.monthly_cap_usd)} monthly cap).`
       : `Research uses your local AI (${esc(s.local_model)}), which is free but slower. You can switch on a cloud model in Settings.`;
   }).catch(() => {});
@@ -57,7 +62,10 @@ async function analyse(accession) {
   out.scrollIntoView({ behavior: "smooth", block: "start" });
   try {
     const r = await api("/api/research/filing", "POST", { ticker, accession, anonymous: anon });
-    const [cls, msg] = TRUST[r.trust];
+    const [cls, msg] = r.source === "rules"
+      ? ["", r.checked ? "Every quote is exact because it was copied from the filing. Check that each figure is the line item its label says."
+        : "The rule-based reader found no sentences with headline figures in this part of the filing. Try the earnings release instead."]
+      : TRUST[r.trust];
     out.innerHTML = `<div class="lab-box">
       <h3>${esc(r.company)}: ${esc(r.filing.label)} (${r.filing.date}) ${r.anonymous ? '<span class="l-tag">anonymised</span>' : ""}</h3>
       <p class="rs-summary">${esc(r.summary)}</p>
@@ -65,6 +73,7 @@ async function analyse(accession) {
         ${card(term("sentiment", "Sentiment"), sentimentBar(r.sentiment), "−1 very negative … +1 very positive")}
         ${card("Numbers verified", `${r.verified} / ${r.checked}`, "quotes found word-for-word in the filing", cls)}
       </div>
+      ${r.source === "rules" ? `<p class="muted">Rule-based reader: every quote below is copied word-for-word from the filing, so it always verifies. The <i>labels</i> come from pattern matching and can be wrong (a figure may belong to a different line item), so read each quote. Tone: ${r.word_counts ? `${r.word_counts.positive} positive vs ${r.word_counts.negative} negative finance words` : "word counts"}. Getting the labels right is exactly what an LLM adds.</p>` : ""}
       <p class="lab-verdict ${cls}">${esc(msg)}${r.unsupported_summary_numbers.length ? ` The summary mentions ${r.unsupported_summary_numbers.map(esc).join(", ")}, which doesn't appear in the text as written (it may be rounded or converted, or made up): a possible ${term("hallucination", "hallucination")}.` : ""}</p>
       <table class="lab-table rs-nums"><tr><th>Key number</th><th>Value</th><th>Quote from the filing</th><th>Check</th></tr>
         ${r.key_numbers.map((n) => `<tr class="${n.verified ? "" : "hl"}"><td>${esc(n.label)}</td><td class="mono">${esc(n.value)}</td>
@@ -103,6 +112,14 @@ async function memory() {
   out.innerHTML = `<p class="lab-loading">Asking the AI, with no documents…</p>`;
   try {
     const r = await api("/api/research/memory", "POST", { ticker, date: $("rs-mem-date").value });
+    if (r.example) {
+      out.innerHTML = `<p class="lab-verdict bad"><b>Recorded example.</b> On ${esc(r.recorded)} a local model (${esc(r.model)}) was asked, with no documents,
+        what happened to ${esc(r.ticker)} after its earnings around ${esc(r.date)}. It answered as if it remembered: any backtest of that model's
+        scores over that period would leak the future (${term("training-data-leakage", "training-data leakage")}). (Its details aren't even reliable: it's recalling, not reading.)</p>
+        <p><i>“${esc(r.answer)}”</i></p><p class="code-meta">Turn AI on in Settings to run this test live on any company and date.</p>`;
+      learnRefresh();
+      return;
+    }
     out.innerHTML = `<p class="lab-verdict ${r.knows ? "bad" : "good"}">${r.knows
       ? `<b>It remembers.</b> The AI says it knows what happened after ${r.date}. Scoring filings from that period with this model would leak the future into your backtest (${term("training-data-leakage", "training-data leakage")}).`
       : "<b>It says it doesn't know.</b> Models can still be influenced by things they half-remember, so anonymising is still wise."}</p>
@@ -122,7 +139,7 @@ async function study() {
       <div class="lab-cards">${card("Correlation", r.correlation === null ? "–" : num(r.correlation), `score vs next ${r.horizon} days' move`)}
         ${card("Same direction", r.same_direction_pct === null ? "–" : `${num(r.same_direction_pct, 0)}%`, "score sign matched the move")}
         ${card("Events", String(r.events), r.anonymous ? "anonymised" : "names and dates shown")}</div>
-      <table class="lab-table"><tr><th>Release</th><th>AI score</th><th>Next ${r.horizon} days</th><th>Trust</th><th>Summary</th></tr>
+      <table class="lab-table"><tr><th>Release</th><th>Tone score</th><th>Next ${r.horizon} days</th><th>Trust</th><th>Summary</th></tr>
       ${r.rows.map((x) => `<tr><td>${x.date}</td><td class="mono ${tone(x.sentiment)}">${x.sentiment > 0 ? "+" : ""}${num(x.sentiment)}</td>
         <td class="mono ${tone(x.move_pct)}">${x.move_pct === null ? "–" : pct(x.move_pct)}</td><td>${esc(x.trust)}</td>
         <td><small>${esc(x.summary.slice(0, 180))}${x.summary.length > 180 ? "…" : ""}</small></td></tr>`).join("")}</table>

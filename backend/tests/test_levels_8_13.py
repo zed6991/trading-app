@@ -9,7 +9,7 @@ import pytest
 
 from app import codelab, ml, portfolio, prices, research
 from app.db import Database
-from app.llm import LLMRouter
+from app.llm import LLMError, LLMRouter
 
 DAY = 86400
 T0 = 1_600_000_000 // DAY * DAY
@@ -40,8 +40,11 @@ def test_router_settings_spend_cap_and_fallback(monkeypatch):
     db = _db()
     r = LLMRouter(db, "http://127.0.0.1:9", "local-model", 1)
     monkeypatch.setattr(LLMRouter, "key", staticmethod(lambda: "sk-test"))
-    assert r.route("code") == "none"
     r.local_available = True
+    assert r.route("code") == "off"
+    with pytest.raises(LLMError):
+        asyncio.run(r.chat("code", []))  # AI switched off: callers use their rules
+    r.update({"ai_enabled": True})
     assert r.route("code") == "local:local-model"
     r.update({"cloud_enabled": True, "cloud_tasks": ["code"], "monthly_cap_usd": 0.01})
     assert r.route("code").startswith("cloud:") and r.route("coach").startswith("local:")
@@ -68,7 +71,7 @@ def test_router_retries_bad_cloud_reply_then_falls_back(monkeypatch):
     r = LLMRouter(_db(), "http://127.0.0.1:9", "m", 1)
     r.local_available = True
     monkeypatch.setattr(LLMRouter, "key", staticmethod(lambda: "sk"))
-    r.update({"cloud_enabled": True, "cloud_tasks": ["research"]})
+    r.update({"ai_enabled": True, "cloud_enabled": True, "cloud_tasks": ["research"]})
     calls = []
 
     async def cloud(self, messages, temperature, max_tokens):
@@ -239,7 +242,7 @@ def test_agent_proposes_sizes_and_executes_on_approval(tmp_path, monkeypatch, fa
     assert len(run["new"]) == 2 and all(p["status"] == "pending" for p in run["new"])
     p = run["new"][0]
     assert p["side"] == "buy" and p["stop_loss"] < p["price"] and p["notional"] <= 0.2 * 100_000 + 1
-    assert "AI check unavailable" in p["ai"]["note"]  # Ollama unreachable -> rules only
+    assert p["ai"]["source"] == "rules" and p["ai"]["note"].startswith("Rule check")  # AI off -> rule check
     again = asyncio.run(eng.agent.run_once())
     assert again["new"] == []  # proposals already waiting
     asyncio.run(eng.agent.decide(p["id"], True))
@@ -278,3 +281,38 @@ def test_apply_portfolio_respects_and_can_fit_limits(tmp_path, monkeypatch):
     assert spy_value == pytest.approx(0.54 * 100_000, rel=0.01)
     asyncio.run(eng.apply_portfolio({"SPY": 100}, 0.5, fit_limits=True))
     assert list(eng.broker.positions) == ["SPY"] and eng.learn.p["counts"]["portfolio_rebalance"] == 1
+
+
+# ------------------------------------------------------------------------------------------ AI off
+def test_rule_assist_explains_errors_and_hints():
+    ex = codelab.EXERCISE_BY_ID["ex-vol"]
+    out = codelab.rule_assist("vol = None", "Traceback\n  Your code, line 4\nTypeError: unsupported", "", ex, "explain", "")
+    assert out["source"] == "rules" and "TypeError on line 4" in out["explanation"] and len(out["hints"]) == 1
+    assert len(codelab.rule_assist("", "", "", ex, "hint", "")["hints"]) == 3
+    peek = codelab.rule_assist("x = close.shift(-1)", "", "", None, "explain", "")
+    assert "look-ahead" in peek["explanation"]
+    assert all(e["hints"] for e in codelab.EXERCISES)
+
+
+def test_rule_extract_and_lexicon():
+    text = ("Forward-looking statements are subject to risks. The Company posted quarterly revenue of $114.5 billion, "
+            "up 12 percent year over year. Diluted earnings per share was $2.10, up 14 percent. Gross margin was 47.9 "
+            "percent. The board declared a cash dividend of $0.27 per share. Revenue is expected to be $120.0 billion "
+            "next quarter. Weak demand and tariff headwinds remain a risk to margins.")
+    out = research.rule_extract(text)
+    values = {n["label"]: n["value"] for n in out["key_numbers"]}
+    assert values["Revenue"] == "$114.5 billion" and values["Earnings per share"] == "$2.10"
+    assert values["Gross margin"] == "47.9 percent" and values["Dividend"] == "$0.27"
+    assert "expected" in out["guidance"] and out["risks"] and "Forward-looking" not in out["summary"]
+    checked = research.verify_extraction(out, text)
+    assert checked["verified"] == checked["checked"] == len(out["key_numbers"]) and checked["trust"] == "high"
+    assert research.lexicon_score("Record revenue, strong growth")[0] > 0 > research.lexicon_score("Shares plunge on weak outlook and probe")[0]
+
+
+def test_agent_rule_check():
+    from app.agent import Agent
+
+    calm = Agent._rule_check({"side": "buy", "news_average": 0.1, "vol_ratio": 1.0, "market_open": True})
+    assert calm["concern"] is False and "no red flags" in calm["note"]
+    bad = Agent._rule_check({"side": "buy", "news_average": -0.5, "vol_ratio": 2.2, "market_open": False})
+    assert bad["concern"] is True and "negative" in bad["note"] and "jumpy" in bad["note"] and "closed" in bad["note"]

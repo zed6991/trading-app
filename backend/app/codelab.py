@@ -386,3 +386,88 @@ async def evaluate_strategy(code: str, symbol: str, fee_rate: float, slippage_bp
         "luck": luck,
         "candles": [{"time": c["time"], "open": c["open"], "close": c["close"]} for c in candles],
     }
+
+
+# ------------------------------------------------------------------------------------------ no-AI tutor
+HINTS = {
+    "ex-load": ["A column is spy['close']; it's a Series of closing prices.",
+                ".iloc[-1] picks the last item of a Series (-1 means 'last').",
+                "So the last close is spy['close'].iloc[-1]."],
+    "ex-returns": ["pandas has a method that does today / yesterday - 1 for every row at once.",
+                   "It's called pct_change(): close.pct_change().",
+                   "Set returns = close.pct_change(). The first value is empty (NaN) because there's no yesterday."],
+    "ex-vol": ["First get the daily standard deviation: returns.std().",
+               "A year has about 252 trading days; volatility grows with the square root of time.",
+               "vol = returns.std() * np.sqrt(252)."],
+    "ex-drawdown": ["The starter already builds drawdown = 1 - close / peak for every day.",
+                    "The worst day is the biggest value in that Series.",
+                    "max_dd = drawdown.max()."],
+    "ex-rolling": ["The helper rolling_yearly_vol(symbol, days, per_year) already works for SPY.",
+                   "Crypto trades every day, so use per_year=365 for Bitcoin.",
+                   'Add "BTCUSDT": rolling_yearly_vol("BTCUSDT", per_year=365) to the DataFrame.'],
+    "ex-positions": ["Compare two Series: close > sma50 gives True/False for each day.",
+                     ".astype(int) turns True/False into 1/0.",
+                     "return (close > sma50).astype(int)"],
+    "ex-shift": ["Today's position can only earn tomorrow's return.",
+                 "pos.shift(1) moves every position one day later.",
+                 "strat_returns = returns * pos.shift(1)"],
+    "ex-costs": ["trades is 1 on every day the position changes.",
+                 "Each change costs 0.1%, which is 0.001 as a fraction.",
+                 "net_returns = strat_returns - 0.001 * trades"],
+}
+for _e in EXERCISES:
+    _e["hints"] = HINTS.get(_e["id"], [])
+
+ERRORS = {
+    "NameError": ("Python doesn't know that name. Usually it's a typo, a variable used before it's created, or a "
+                  "missing import (e.g. 'np' needs 'import numpy as np')."),
+    "KeyError": ("You asked for a column or key that isn't there. Check the spelling and case: price columns are "
+                 "'open', 'high', 'low', 'close' and 'volume'. For symbols, see qp.symbols()."),
+    "AttributeError": ("You used a method or property the object doesn't have. If it says 'NoneType', a variable is "
+                       "still None: you probably haven't filled in a line marked with None yet."),
+    "TypeError": ("An operation got the wrong kind of value, e.g. adding a number to None or text. Check that each "
+                  "variable holds what you expect: print(type(x), x)."),
+    "ValueError": "A function got a value it can't use. The message after 'ValueError:' says which one.",
+    "IndexError": "You asked for a position past the end of a list or Series. Remember .iloc[-1] is the last item.",
+    "ZeroDivisionError": "Something was divided by zero. Check where the divisor comes from.",
+    "SyntaxError": ("Python couldn't read a line: often a missing bracket, quote or colon, or a stray character. "
+                    "Look at the line number and the one before it."),
+    "IndentationError": ("The spaces at the start of a line don't line up. Code inside a def or if needs to be "
+                         "indented by the same amount (4 spaces)."),
+    "ModuleNotFoundError": "That library isn't available here. You can use pandas, numpy, scikit-learn and qp.",
+}
+
+
+def rule_assist(code: str, error: str, check_msg: str, exercise: dict | None, mode: str, question: str) -> dict:
+    """Help without an AI: explain the error type, show the exercise's hints one level at a time."""
+    hints = list(exercise.get("hints", [])) if exercise else []
+    parts = []
+    if error and not re.search(r"Error|Traceback|stopped|Exception", error):
+        error, check_msg = "", check_msg or error  # a checker message, not a Python error
+    if error:
+        kind = next((k for k in ERRORS if k in error), None)
+        line = re.search(r"Your code, line (\d+)", error)
+        if "stopped" in error and "seconds" in error:
+            parts.append("Your code ran too long and was stopped. Look for a while loop whose condition never becomes "
+                         "false, or a loop over far more items than you meant.")
+        elif kind:
+            parts.append(f"{kind}{f' on line {line.group(1)}' if line else ''}: {ERRORS[kind]}")
+        else:
+            parts.append("Python stopped with an error. Read the last line of the message: it names the problem, and "
+                         "the 'Your code, line N' line tells you where.")
+    elif check_msg:
+        parts.append(f"The checker says: {check_msg}")
+    if "shift(-" in code.replace(" ", ""):
+        parts.append("Careful: shift(-1) moves future values into today, which is look-ahead. Use shift(1) for "
+                     "'yesterday', never shift(-1) in a signal.")
+    if mode == "explain" and not parts:
+        parts.append(f"This exercise asks you to: {exercise['task']}" if exercise else
+                     "Run your code first. If there's an error or a wrong answer, Explain will tell you what it means.")
+    if mode == "ask" and question:
+        parts.append("The AI is off, so I can't answer free-form questions. Tap any underlined word for its meaning, "
+                     "or check the lesson for this level. The hints below may help.")
+    if mode == "fix" and not exercise:
+        parts.append("Automatic fixes need the AI (switched off in Settings). Use the explanation above to fix it, then Run again.")
+    shown = hints if mode in ("hint", "fix", "ask") else hints[:1]
+    return {"explanation": " ".join(parts) or "Looks fine so far. Run it to see the output.", "hints": shown,
+            "code": None, "mode": mode, "source": "rules", "cost_usd": 0.0}
