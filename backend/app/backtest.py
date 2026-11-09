@@ -84,11 +84,12 @@ def run_backtest(
     slippage_bps: float,
     bars_per_year: float | None = None,
     symbol: str = "BACKTEST",
+    trade_from: int = 0,
 ) -> dict:
     """Simulate `strategy_name` over ascending `candles`.
 
     `bars_per_year` annualises the Sharpe ratio; if None it is inferred from the median candle spacing.
-    `symbol` only labels the fills.
+    `symbol` only labels the fills. Bars before `trade_from` only warm up the indicators: no trades, no equity.
     Raises KeyError for an unknown strategy and ValueError for invalid params/cash.
     """
     strategy = make_strategy(strategy_name, params)
@@ -107,7 +108,10 @@ def run_backtest(
             markers.append(_marker(f, time))
 
     pending: str | None = None
+    trade_from = max(0, min(int(trade_from), n - 1)) if n else 0
     for i, bar in enumerate(candles):
+        if i < trade_from:
+            continue
         t = int(bar["time"])
         o, h, lo, c = float(bar["open"]), float(bar["high"]), float(bar["low"]), float(bar["close"])
         broker.update_day(t, {symbol: o})
@@ -135,11 +139,66 @@ def run_backtest(
         if (sig == "buy" and symbol not in broker.positions) or (sig == "sell" and symbol in broker.positions):
             pending = sig
 
-    buy_hold = (float(candles[-1]["close"]) / float(candles[0]["open"]) - 1) * 100 if n else 0.0
+    buy_hold = (float(candles[-1]["close"]) / float(candles[trade_from]["open"]) - 1) * 100 if n else 0.0
     sells = [t for t in trades if t["side"] == "sell"]
     return {
         "metrics": _metrics([p["value"] for p in equity_curve], sells, float(cash), buy_hold, bpy),
         "equity_curve": equity_curve,
         "trades": trades,
         "markers": markers,
+    }
+
+
+def walk_forward(
+    candles: list[dict],
+    strategy_name: str,
+    limits: RiskLimits,
+    cash: float,
+    fee_rate: float,
+    slippage_bps: float,
+    bars_per_year: float | None = None,
+    symbol: str = "BACKTEST",
+    split: float = 0.7,
+    grid: list[dict] | None = None,
+) -> dict:
+    """Tune on the first `split` of history (try every setting in the grid, keep the best total return), then run
+    the winner once on the rest, which it has never seen. Returns both results and every tried setting."""
+    from app.strategies import GRIDS, STRATEGIES
+
+    if strategy_name not in STRATEGIES:
+        raise KeyError(f"unknown strategy '{strategy_name}'")
+    if not 0.3 <= split <= 0.9:
+        raise ValueError("split must be between 0.3 and 0.9")
+    grid = grid or GRIDS.get(strategy_name) or [{}]
+    n = len(candles)
+    cut = int(n * split)
+    if cut < 60 or n - cut < 30:
+        raise ValueError("Not enough history to split into a tuning part and a test part. Use more bars.")
+    tuning = candles[:cut]
+    tried = []
+    for params in grid:
+        try:
+            res = run_backtest(tuning, strategy_name, params, limits, cash, fee_rate, slippage_bps, bars_per_year, symbol)
+        except ValueError:
+            continue
+        tried.append({"params": make_strategy(strategy_name, params).params, "metrics": res["metrics"]})
+    if not tried:
+        raise ValueError("None of the settings could run on this history.")
+    best = max(tried, key=lambda x: (x["metrics"]["total_return_pct"], x["metrics"]["sharpe"]))
+    in_sample = run_backtest(tuning, strategy_name, best["params"], limits, cash, fee_rate, slippage_bps,
+                             bars_per_year, symbol)
+    # The test run sees earlier bars only to warm up its indicators; it trades from the cut onwards.
+    warm = max(0, cut - make_strategy(strategy_name, best["params"]).min_bars - 1)
+    out_sample = run_backtest(candles[warm:], strategy_name, best["params"], limits, cash, fee_rate, slippage_bps,
+                              bars_per_year, symbol, trade_from=cut - warm)
+    ins, outs = in_sample["metrics"], out_sample["metrics"]
+    drop = ins["total_return_pct"] - outs["total_return_pct"]
+    held_up = outs["total_return_pct"] > 0 and outs["total_return_pct"] >= outs["buy_hold_return_pct"]
+    return {
+        "best_params": best["params"], "tried": tried, "split": split,
+        "tuning_period": {"start": int(tuning[0]["time"]), "end": int(tuning[-1]["time"])},
+        "test_period": {"start": int(candles[cut]["time"]), "end": int(candles[-1]["time"])},
+        "in_sample": in_sample, "out_sample": out_sample,
+        "fell_apart": outs["total_return_pct"] < ins["total_return_pct"] / 2 or outs["total_return_pct"] < 0,
+        "held_up": held_up, "drop_pct": round(drop, 2),
     }

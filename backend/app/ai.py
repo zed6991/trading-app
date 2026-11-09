@@ -19,7 +19,7 @@ LEVEL_LOOKBACK = 30
 MAX_SUMMARY_CHARS = 600
 
 SYSTEM_PROMPT = (
-    "You are a disciplined crypto technical analyst for a long-only spot paper-trading desk. "
+    "You are a disciplined technical analyst (US stocks, ETFs and crypto) for a long-only paper-trading desk. "
     "You base every call strictly on the price action, indicators and position provided; you never invent data, "
     "never chase, and you prefer 'hold' when signals conflict. "
     "Respond with ONLY a strict JSON object, no markdown, no extra keys, exactly these keys:\n"
@@ -34,12 +34,11 @@ SYSTEM_PROMPT = (
     "leads to your recommendation. Never use trading jargon such as RSI, MACD, SMA, EMA, Bollinger, momentum, support, "
     "resistance, bullish, bearish, long or short. Never promise a profit."
 )
-COIN_NAMES = {"BTCUSDT": "Bitcoin", "ETHUSDT": "Ethereum", "SOLUSDT": "Solana"}
-
-
 def coin_name(symbol: str) -> str:
-    """Everyday name for a trading pair, e.g. BTCUSDT -> Bitcoin."""
-    return COIN_NAMES.get(symbol, symbol.removesuffix("USDT"))
+    """Everyday name for any asset, e.g. BTCUSDT -> Bitcoin, AAPL -> Apple."""
+    from app.assets import name
+
+    return name(symbol)
 
 
 def _num(v) -> float | None:
@@ -309,10 +308,11 @@ class AIAnalyst:
         Numbers come from `facts`; the model is told not to change them. Terms the learner hasn't reached yet
         (by level) must not appear, so the explanation always matches what they've been taught.
         """
+        from app.learn import COURSE_OUTLINE, MAX_LEVEL
+
         system = (
             "You are a patient trading teacher reviewing ONE paper trade with a beginner. "
-            f"The learner is on level {level} of 6 (1 basics, 2 stop-loss/take-profit/position size, 3 charts, "
-            "4 indicators, 5 strategies/backtesting, 6 automation). Only use trading terms from their level or "
+            f"The learner is on level {level} of {MAX_LEVEL} ({COURSE_OUTLINE}). Only use trading terms from their level or "
             "below, and explain any term in a few words. Use the exact numbers given; never invent prices or "
             "reasons. Be kind and concrete, never promise profit. Respond with ONLY strict JSON: "
             '{"what": "1-2 sentences: what happened", "why": "1-2 sentences: why it ended this way", '

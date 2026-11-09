@@ -11,7 +11,7 @@ import math
 import time
 from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from app.config import settings
 
@@ -109,12 +109,15 @@ class Position:
 class PaperBroker:
     """Simulated spot broker. Not thread-safe; use from a single thread / event loop."""
 
-    def __init__(self, cash: float, fee_rate: float, slippage_bps: float, limits: RiskLimits) -> None:
+    def __init__(self, cash: float, fee_rate: float, slippage_bps: float, limits: RiskLimits,
+                 fee_rate_for: Callable[[str], float] | None = None) -> None:
+        """`fee_rate_for(symbol)` overrides `fee_rate` per symbol (e.g. no commission on stocks)."""
         if cash <= 0:
             raise ValueError("cash must be positive")
         if fee_rate < 0 or slippage_bps < 0:
             raise ValueError("fee_rate and slippage_bps must be >= 0")
         self.fee_rate = float(fee_rate)
+        self.fee_rate_for = fee_rate_for
         self.slippage_bps = float(slippage_bps)
         self.limits = limits
         self.reset(cash)
@@ -142,6 +145,9 @@ class PaperBroker:
         self.halted = False
         self.halt_reason = None
         self.day_start_equity = self.equity({})
+
+    def _fee(self, symbol: str) -> float:
+        return float(self.fee_rate_for(symbol)) if self.fee_rate_for else self.fee_rate
 
     @property
     def _slip(self) -> float:
@@ -186,7 +192,7 @@ class PaperBroker:
         fill = price * (1 + self._slip)
         max_notional = self.limits.max_position_pct * self.equity({symbol: price})
         if qty is None:
-            affordable = self.cash / (fill * (1 + self.fee_rate))
+            affordable = self.cash / (fill * (1 + self._fee(symbol)))
             qty = min(max_notional / price, affordable)
         else:
             qty = float(qty)
@@ -197,7 +203,7 @@ class PaperBroker:
         if not (qty > 0 and math.isfinite(qty)):
             raise RiskError("order quantity must be positive")
         notional = qty * fill
-        fee = notional * self.fee_rate
+        fee = notional * self._fee(symbol)
         cost = notional + fee
         if cost > self.cash * (1 + _EPS):
             raise RiskError(f"insufficient cash: need {cost:.2f}, have {self.cash:.2f}")
@@ -228,7 +234,7 @@ class PaperBroker:
             raise RiskError("invalid price")
         fill = price * (1 - self._slip)
         notional = pos.qty * fill
-        fee = notional * self.fee_rate
+        fee = notional * self._fee(symbol)
         pnl = (notional - fee) - (pos.qty * pos.avg_price + pos.entry_fee)
         self.cash += notional - fee
         self.fees_paid += fee
@@ -363,7 +369,7 @@ class PaperBroker:
         self.positions = {}
         for raw in state.get("positions", []):
             data = {k: v for k, v in raw.items() if k in names}
-            data.setdefault("entry_fee", data["qty"] * data["avg_price"] * self.fee_rate)
+            data.setdefault("entry_fee", data["qty"] * data["avg_price"] * self._fee(data["symbol"]))
             data.setdefault("high_water", data["avg_price"])
             pos = Position(**data)
             self.positions[pos.symbol] = pos

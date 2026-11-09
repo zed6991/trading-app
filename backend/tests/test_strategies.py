@@ -16,7 +16,7 @@ def candles_from(closes, start=1_700_000_000, step=60):
 
 
 def test_registry_and_listing():
-    assert set(STRATEGIES) == {"sma_cross", "ema_macd", "rsi_reversion", "bollinger_breakout"}
+    assert set(STRATEGIES) == {"sma_cross", "ema_macd", "rsi_reversion", "bollinger_breakout", "momentum"}
     listed = {s["name"]: s for s in list_strategies()}
     assert listed["sma_cross"]["params"] == {"fast": 10, "slow": 30}
     assert all(s["description"] for s in listed.values())

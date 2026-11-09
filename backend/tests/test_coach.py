@@ -124,7 +124,7 @@ def test_rule_review_and_next_step(eng):
     r = asyncio.run(eng.ai and Coach(eng).review(7))
     assert r["source"] == "rules" and r["stats"]["closed"] == 1
     assert r["headline"].startswith("1 closed trade") and r["went_well"]
-    assert r["next"]["primary"]["kind"] == "lesson" and r["next"]["primary"]["id"] == "l1-what-is-trading"
+    assert r["next"]["primary"]["kind"] == "lesson" and r["next"]["primary"]["id"] == "l1-markets"
     assert eng.learn.p["counts"]["coach_review"] == 1
 
 
@@ -155,18 +155,18 @@ def test_offline_chat_defines_terms_and_routes(eng):
     assert out["source"] == "rules" and out["answer"].startswith("Stop-loss")
     assert "Level 2" in out["answer"] and out["lesson"] is None  # not taught yet at level 1
     out = asyncio.run(coach.ask("What does equity mean"))
-    assert out["answer"].startswith("Equity") and out["lesson"]["id"] == "l1-your-account"
+    assert out["answer"].startswith("Equity") and out["lesson"]["id"] == "l1-account"
     out = asyncio.run(coach.ask("how am I doing?"))
     assert "No trades" in out["answer"]
     out = asyncio.run(coach.ask("tell me a joke"))
-    assert "next step" in out["answer"] and out["lesson"]["id"] == "l1-what-is-trading"
+    assert "next step" in out["answer"] and out["lesson"]["id"] == "l1-markets"
     assert eng.learn.p["counts"]["coach_ask"] == 4
     with pytest.raises(ValueError):
         asyncio.run(coach.ask("   "))
 
 
 def test_ai_chat_context_and_lesson_gating(tmp_path):
-    reply = {"answer": "Equity is cash plus coins. Yours is $100,500.", "lesson_id": "l4-momentum",
+    reply = {"answer": "Equity is cash plus coins. Yours is $100,500.", "lesson_id": "l4-volatility",
              "follow_ups": ["What are fees?", "x", "y", "z"]}
     eng = FakeEngine(tmp_path, reply, available=True)
     out = asyncio.run(Coach(eng).ask("what's my equity?", [{"role": "user", "content": "hi"},

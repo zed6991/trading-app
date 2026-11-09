@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from app import indicators
+from app import assets, indicators, prices as price_data
 from app.ai import AIAnalyst, coin_name
 from app.coach import Coach
 from app.broker import PaperBroker, RiskError, RiskLimits
@@ -16,7 +16,8 @@ from app.config import Settings, settings as default_settings
 from app.db import Database
 from app.hub import Hub
 from app.learn import Learning, rule_explanation, trade_facts
-from app.market import MarketData, fetch_history, fetch_klines
+from app.market import MarketData, fetch_klines
+from app.stocks import StockFeed, market_status
 from app.strategies import STRATEGIES, Strategy, make_strategy
 
 logger = logging.getLogger("app.engine")
@@ -28,6 +29,56 @@ EQUITY_MIN_SPACING = 60.0
 AI_CANDLES = 100
 MARKET_RETRY = 30.0
 ADVICE_INTERVAL = "1h"  # hourly candles, so beginner advice doesn't flip every few minutes
+
+
+class CombinedMarket:
+    """Crypto (Binance stream) and US stocks (Yahoo polling) behind the MarketData interface."""
+
+    def __init__(self, symbols: list[str], interval: str, history_bars: int, on_update, on_close):
+        crypto = [s for s in symbols if assets.is_crypto(s)]
+        stocks = [s for s in symbols if not assets.is_crypto(s)]
+        self.crypto = MarketData(crypto, interval, history_bars, on_update, on_close)
+        self.stocks = StockFeed(stocks, history_bars, on_update, on_close)
+        # Both feeds write into the same dicts, so callers (and tests) see one view of every symbol.
+        self.candles: dict[str, list[dict]] = {**self.crypto.candles, **self.stocks.candles}
+        self.last_price: dict[str, float] = {}
+        for feed in (self.crypto, self.stocks):
+            feed.candles = self.candles
+            feed.last_price = self.last_price
+
+    def _feed(self, symbol: str):
+        return self.crypto if assets.is_crypto(symbol) else self.stocks
+
+    @property
+    def connected(self) -> bool:
+        return self.crypto_connected or self.stocks_connected
+
+    @property
+    def crypto_connected(self) -> bool:
+        return bool(self.crypto.symbols) and bool(self.crypto.connected)
+
+    @property
+    def stocks_connected(self) -> bool:
+        return bool(self.stocks.symbols) and self.stocks.connected
+
+    def closed_candles(self, symbol: str) -> list[dict]:
+        return self._feed(symbol).closed_candles(symbol)
+
+    async def start(self) -> None:
+        results = await asyncio.gather(
+            *(f.start() for f in (self.crypto, self.stocks) if f.symbols), return_exceptions=True)
+        errors = [r for r in results if isinstance(r, BaseException)]
+        if errors and len(errors) == len(results):
+            raise errors[0]
+        for err in errors:
+            logger.error("Market feed failed to start: %r", err)
+
+    async def stop(self) -> None:
+        for feed in (self.crypto, self.stocks):
+            try:
+                await feed.stop()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Feed stop failed: %r", exc)
 
 
 def market_disabled() -> bool:
@@ -43,7 +94,7 @@ class TradingEngine:
         self.db = Database(self.settings.db_path)
         self.hub = Hub()
         self.learn = Learning(self.db)
-        self.market = MarketData(
+        self.market = CombinedMarket(
             self.symbols, self.interval, self.settings.history_bars, self.on_update, self.on_close
         )
         self.ai = AIAnalyst(self.settings.ollama_url, self.settings.ollama_model, self.settings.ollama_timeout)
@@ -51,6 +102,7 @@ class TradingEngine:
         self.coach = Coach(self)
         self.broker = self._load_broker()
         self.config = self._load_config()
+        self.orders: list[dict] = self._load_orders()
         self._strategies: dict[str, Strategy] = {}
         self.ai_health: dict[str, Any] = {"available": False, "model": self.settings.ollama_model, "error": "not checked yet"}
         self._last_account_broadcast = 0.0
@@ -70,16 +122,29 @@ class TradingEngine:
                 limits = limits.update(stored_risk)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Ignoring invalid stored risk limits: %s", exc)
-        broker = PaperBroker(cash=s.starting_cash, fee_rate=s.fee_rate, slippage_bps=s.slippage_bps, limits=limits)
+        broker = self._new_broker(limits)
         state = self.db.get_kv("broker")
         if isinstance(state, dict):
             try:
                 broker.load(state)
             except Exception as exc:  # noqa: BLE001
                 logger.error("Could not restore broker state, starting fresh: %s", exc)
-                broker = PaperBroker(cash=s.starting_cash, fee_rate=s.fee_rate, slippage_bps=s.slippage_bps, limits=limits)
+                broker = self._new_broker(limits)
         broker.limits = limits  # kv 'risk' is authoritative for limits
         return broker
+
+    def _new_broker(self, limits: RiskLimits) -> PaperBroker:
+        s = self.settings
+        return PaperBroker(cash=s.starting_cash, fee_rate=s.fee_rate, slippage_bps=s.slippage_bps, limits=limits,
+                           fee_rate_for=lambda sym: assets.fee_rate(sym, s.fee_rate))
+
+    def _load_orders(self) -> list[dict]:
+        stored = self.db.get_kv("orders")
+        return [o for o in stored if isinstance(o, dict) and o.get("symbol") in self.symbols] \
+            if isinstance(stored, list) else []
+
+    def _save_orders(self) -> None:
+        self.db.set_kv("orders", self.orders)
 
     def _default_strategy_conf(self) -> dict:
         return {"name": DEFAULT_STRATEGY, "params": dict(STRATEGIES[DEFAULT_STRATEGY].default_params)}
@@ -197,8 +262,12 @@ class TradingEngine:
         return p
 
     def status(self) -> dict:
+        on = self.enable_market
         return {
-            "market_connected": bool(self.market.connected) if self.enable_market else False,
+            "market_connected": bool(self.market.connected) if on else False,
+            "crypto_connected": bool(self.market.crypto_connected) if on else False,
+            "stocks_connected": bool(self.market.stocks_connected) if on else False,
+            "us_market": market_status(),
             "ai_available": bool(self.ai_health.get("available")),
             "ai_model": self.ai_health.get("model") or self.settings.ollama_model,
         }
@@ -212,7 +281,9 @@ class TradingEngine:
     def state(self) -> dict:
         return {
             "symbols": self.symbols,
+            "assets": assets.public_list(self.symbols),
             "interval": self.interval,
+            "orders": self.open_orders(),
             "account": self.account(),
             "engine": self.config,
             "risk": self.risk(),
@@ -234,7 +305,9 @@ class TradingEngine:
             return list(data[-limit:])
         if not self.enable_market:
             return []
-        return await fetch_klines(None, symbol, self.interval, limit=limit)
+        if assets.is_crypto(symbol):
+            return await fetch_klines(None, symbol, self.interval, limit=limit)
+        return await price_data.history(symbol, "1m", limit)
 
     # ------------------------------------------------------------------ events
     async def log(self, level: str, message: str) -> dict:
@@ -282,6 +355,8 @@ class TradingEngine:
 
     async def on_update(self, symbol: str, candle: dict) -> None:
         price = float(candle["close"])
+        if any(o["symbol"] == symbol for o in self.orders):
+            await self.check_orders(symbol, price)
         if symbol in self.broker.positions:
             async with self.lock:
                 if symbol in self.broker.positions:
@@ -423,18 +498,120 @@ class TradingEngine:
         return limits.to_dict()
 
     # ------------------------------------------------------------------ manual actions
-    async def place_order(self, symbol: str, side: str, qty: float | None = None) -> dict:
+    def market_open_for(self, symbol: str) -> bool:
+        return assets.is_crypto(symbol) or market_status()["open"]
+
+    def _closed_note(self, symbol: str) -> str | None:
+        if self.market_open_for(symbol):
+            return None
+        return ("The US market is closed, so this practice trade used the last price. With a real broker a market "
+                "order would wait for the next open and could fill at a different price (a gap).")
+
+    def _risk_qty(self, symbol: str, price: float, risk_amount: float) -> float:
+        stop = self.broker.limits.stop_loss_pct
+        if stop <= 0:
+            raise RiskError("Turn on a stop-loss first: risk-based sizing needs to know where you'd get out.")
+        qty = risk_amount / (price * stop)
+        equity = self.broker.equity(self.prices())
+        cap = self.broker.limits.max_position_pct * equity
+        if qty * price > cap * 1.0001:
+            raise RiskError(
+                f"To risk ${risk_amount:,.0f} with a {stop * 100:g}% stop-loss you'd need to buy ${qty * price:,.0f}, "
+                f"more than your position-size limit of ${cap:,.0f}. Risk less, or use a wider stop-loss.")
+        return qty
+
+    async def place_order(self, symbol: str, side: str, qty: float | None = None, *,
+                          order_type: str = "market", limit_price: float | None = None,
+                          risk_amount: float | None = None) -> dict:
+        """Market order (fills now), or limit order (waits until the price reaches `limit_price`).
+        `risk_amount` sizes a buy so that hitting the stop-loss loses about that many dollars."""
         symbol = self.check_symbol(symbol)
+        if side not in ("buy", "sell"):
+            raise ValueError(f"Invalid side {side!r}")
+        if order_type == "limit":
+            return await self.place_limit(symbol, side, limit_price, qty, risk_amount)
+        if order_type != "market":
+            raise ValueError("order type must be 'market' or 'limit'")
         async with self.lock:
             price = self.price(symbol)
             ts = time.time()
             if side == "buy":
+                if risk_amount is not None:
+                    qty = self._risk_qty(symbol, price, float(risk_amount))
                 fill = self.broker.open_long(symbol, price, ts, strategy=None, qty=qty, reason="manual")
-            elif side == "sell":
-                fill = self.broker.close(symbol, price, ts, reason="manual")
             else:
-                raise ValueError(f"Invalid side {side!r}")
-            return await self._record_fill(fill)
+                fill = self.broker.close(symbol, price, ts, reason="manual")
+            out = await self._record_fill(fill)
+            if side == "buy" and risk_amount is not None:
+                self.learn.record("risk_sized")
+        note = self._closed_note(symbol)
+        return {**out, "note": note} if note else out
+
+    # ------------------------------------------------------------------ limit orders
+    def open_orders(self) -> list[dict]:
+        return [{**o, "name": assets.name(o["symbol"])} for o in self.orders]
+
+    async def place_limit(self, symbol: str, side: str, limit_price: float | None, qty: float | None,
+                          risk_amount: float | None) -> dict:
+        if not limit_price or limit_price <= 0:
+            raise ValueError("A limit order needs a limit price above zero.")
+        price = self.price(symbol)
+        if side == "sell" and symbol not in self.broker.positions:
+            raise RiskError(f"You don't own any {assets.name(symbol)} to sell.")
+        if side == "buy" and risk_amount is not None:
+            qty = self._risk_qty(symbol, float(limit_price), float(risk_amount))
+        if any(o["symbol"] == symbol and o["side"] == side for o in self.orders):
+            raise RiskError(f"You already have a {side} limit order waiting on {assets.name(symbol)}. Cancel it first.")
+        order = {"id": int(time.time() * 1000), "symbol": symbol, "side": side, "limit_price": float(limit_price),
+                 "qty": qty, "created": time.time(), "price_when_placed": price}
+        self.orders.append(order)
+        self._save_orders()
+        self.learn.record("limit_order")
+        await self.log("info", f"LIMIT {side.upper()} {assets.name(symbol)} at {limit_price:.6g} (now {price:.6g})")
+        await self.hub.broadcast("orders", self.open_orders())
+        # A limit that's already reachable fills straight away (if the market is open).
+        if self.market_open_for(symbol):
+            await self.check_orders(symbol, price)
+        filled = next((o for o in self.orders if o["id"] == order["id"]), None) is None
+        return {**order, "status": "filled" if filled else "waiting", "name": assets.name(symbol),
+                "note": None if filled else self._limit_note(symbol, side, float(limit_price), price)}
+
+    def _limit_note(self, symbol: str, side: str, limit: float, price: float) -> str:
+        if not self.market_open_for(symbol):
+            return "Waiting. The US market is closed, so it can only fill after the next open."
+        if side == "buy":
+            return f"Waiting until the price falls to {limit:,.2f} or lower (it's {price:,.2f} now)."
+        return f"Waiting until the price rises to {limit:,.2f} or higher (it's {price:,.2f} now)."
+
+    async def check_orders(self, symbol: str, price: float) -> None:
+        if not self.market_open_for(symbol):
+            return
+        async with self.lock:
+            for order in [o for o in self.orders if o["symbol"] == symbol]:
+                hit = price <= order["limit_price"] if order["side"] == "buy" else price >= order["limit_price"]
+                if not hit:
+                    continue
+                self.orders.remove(order)
+                self._save_orders()
+                try:
+                    if order["side"] == "buy":
+                        fill = self.broker.open_long(symbol, price, time.time(), qty=order.get("qty"), reason="limit")
+                    else:
+                        fill = self.broker.close(symbol, price, time.time(), reason="limit")
+                except RiskError as exc:
+                    await self.log("warning", f"Limit {order['side']} on {symbol} couldn't fill: {exc}")
+                else:
+                    await self._record_fill(fill)
+                await self.hub.broadcast("orders", self.open_orders())
+
+    async def cancel_order(self, order_id: int) -> list[dict]:
+        before = len(self.orders)
+        self.orders = [o for o in self.orders if o["id"] != int(order_id)]
+        if len(self.orders) == before:
+            raise KeyError(f"Order {order_id} not found")
+        self._save_orders()
+        await self.hub.broadcast("orders", self.open_orders())
+        return self.open_orders()
 
     async def close_position(self, symbol: str) -> dict:
         symbol = self.check_symbol(symbol)
@@ -478,8 +655,8 @@ class TradingEngine:
         """One plain recommendation for a beginner: buy, sell or wait, based on hourly candles."""
         symbol = self.check_symbol(symbol)
         try:
-            candles = await fetch_history(symbol, ADVICE_INTERVAL, AI_CANDLES)
-        except httpx.HTTPError as exc:
+            candles = await price_data.history(symbol, ADVICE_INTERVAL, AI_CANDLES)
+        except (httpx.HTTPError, ValueError) as exc:
             logger.warning("Hourly candles for %s unavailable (%s); using live candles", symbol, exc)
             candles = None
         analysis = await self.analyze(symbol, candles)

@@ -20,6 +20,8 @@ def _load_dotenv() -> None:
 
 _load_dotenv()
 
+DEFAULT_SYMBOLS = "SPY,QQQ,TLT,GLD,AAPL,MSFT,NVDA,AMZN,GOOGL,TSLA,JPM,KO,XOM,BTCUSDT,ETHUSDT,SOLUSDT"
+
 
 def _env(key: str, default: str) -> str:
     return os.environ.get(key, default)
@@ -28,7 +30,7 @@ def _env(key: str, default: str) -> str:
 @dataclass(frozen=True)
 class Settings:
     symbols: list[str] = field(
-        default_factory=lambda: [s.strip().upper() for s in _env("SYMBOLS", "BTCUSDT,ETHUSDT,SOLUSDT").split(",") if s.strip()]
+        default_factory=lambda: [s.strip().upper() for s in _env("SYMBOLS", DEFAULT_SYMBOLS).split(",") if s.strip()]
     )
     interval: str = _env("INTERVAL", "1m")
     history_bars: int = int(_env("HISTORY_BARS", "500"))
@@ -36,7 +38,7 @@ class Settings:
     binance_ws: str = _env("BINANCE_WS", "wss://stream.binance.com:9443")
 
     starting_cash: float = float(_env("STARTING_CASH", "100000"))
-    fee_rate: float = float(_env("FEE_RATE", "0.001"))
+    fee_rate: float = float(_env("FEE_RATE", "0.001"))  # crypto; US stocks/ETFs have no commission
     slippage_bps: float = float(_env("SLIPPAGE_BPS", "2"))
 
     # Default risk limits (editable at runtime from the dashboard)

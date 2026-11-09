@@ -1,19 +1,29 @@
 # Project purpose
 
-This is a **learning app first**. It teaches complete beginners to trade, step by step, with pretend money and
-real prices. The user learns as they go: short lessons, quick quizzes, hands-on practice challenges, and
+This is a **learning app first**: "Zero to AI-powered quant trader". It teaches complete beginners to trade US
+stocks, ETFs and crypto step by step, with pretend money and real prices, then takes them through statistics,
+proper strategy testing and (on the roadmap) Python, ML and LLM agents. The user learns as they go: short lessons, quick quizzes, hands-on practice challenges, and
 explanations of their own trades. Topics get more complex level by level, and the app's features unlock as the
 matching topic is taught.
 
-## The course (`backend/app/learn.py`)
+## The course (content in `backend/app/curriculum.py`, progress in `backend/app/learn.py`)
 
-Six levels: 1 basics → 2 protecting your money → 3 reading charts → 4 indicators → 5 strategies & backtesting →
-6 automation & your trading plan. A level is complete when every lesson quiz is answered correctly and every
-non-bonus challenge is done; that unlocks the next level. Level N's features are usable while on level N
-(frontend: `data-unlock="N"`, hidden until `body.unlock-N`). "Unlock everything" exists for experienced users.
+Built levels: 1 how markets work → 2 risk first → 3 charts and classic signals → 4 returns and volatility →
+5 how assets move together → 6 edge or luck? → 7 testing strategies properly. `ROADMAP` lists levels 8-13 (Python,
+strategies in code, portfolios and factors, ML, LLM research, agents + capstone), shown as "coming soon". When you
+build one, move it from `ROADMAP` into `LEVELS` with lessons, challenges and glossary terms.
+
+A level is complete when every lesson quiz is answered correctly and every non-bonus challenge is done; that unlocks
+the next level. Level N's features are usable while on level N (frontend: `data-unlock="N"`, hidden until
+`body.unlock-N`, gating CSS covers 2-13). Quiz choices are shuffled per question by `choice_order` and answers are
+checked on the server. "Unlock everything" exists for experienced users.
+
+Assets live in `backend/app/assets.py` (names, kind stock/etf/crypto, fees). Stocks come from Yahoo Finance
+(`stocks.py`, polled, US market hours with holidays) and crypto from Binance (`market.py`); `engine.CombinedMarket`
+joins them. The Lab (`frontend/lab.js`, maths in `quant.py`) works on daily data via `prices.cached_history`.
 
 Challenges complete automatically from real actions: the engine calls `engine.learn.record*` on fills, risk and
-bracket changes, auto-trading, AI analysis, backtests and explanations. Browser-only actions (viewing charts,
+bracket changes, limit and risk-sized orders, auto-trading, AI analysis, Lab runs, backtests and explanations. Browser-only actions (viewing charts,
 toggling indicators, using the order ticket) go through `POST /api/learn/events` (whitelisted in `CLIENT_EVENTS`).
 
 ## Rules for every change
@@ -32,8 +42,10 @@ toggling indicators, using the order ticket) go through `POST /api/learn/events`
   (reviews are checked with `numbers_match` and may not add points). Chat gets the learner's level, taught and
   untaught words, account, recent trades and current screen, and must never answer buy/sell with a yes/no.
   Keep the offline (no Ollama) path working.
-- **Protect the user by default.** Conservative risk limits, auto-trading off until level 6 and opted in, no
+- **Protect the user by default.** Conservative risk limits, auto-trading hidden until level 13 and opted in, no
   implied guaranteed profit. This is paper trading.
+- **Be honest about evidence.** Lab results compare against buy & hold and random traders, include costs, and say
+  plainly when something looks like luck or overfitting.
 - **Keep the curriculum valid.** `backend/tests/test_learn.py` checks that every glossary link resolves, quiz
   answers are valid and challenge events exist. Run the tests after editing content.
 

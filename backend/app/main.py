@@ -11,17 +11,18 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import indicators
-from app.backtest import bars_per_year, run_backtest
+from app import assets, indicators, prices, quant
+from app.backtest import bars_per_year, run_backtest, walk_forward
 from app.broker import RiskError
 from app.config import settings
 from app.engine import TradingEngine
 from app.learn import GLOSSARY
-from app.market import fetch_history
+from app.stocks import market_status
 from app.strategies import STRATEGIES, list_strategies
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("app.main")
+logging.getLogger("httpx").setLevel(logging.WARNING)  # stock polling would flood the log
 
 engine = TradingEngine()
 
@@ -35,7 +36,7 @@ async def lifespan(app: FastAPI):
         await engine.stop()
 
 
-app = FastAPI(title="AI Crypto Paper Trader", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Quant Trader Academy", version="2.0.0", lifespan=lifespan)
 
 
 # ---------------------------------------------------------------------- error handling
@@ -93,6 +94,9 @@ class OrderRequest(BaseModel):
     symbol: str
     side: Literal["buy", "sell"]
     qty: float | None = Field(default=None, gt=0)
+    type: Literal["market", "limit"] = "market"
+    limit_price: float | None = Field(default=None, gt=0)
+    risk_amount: float | None = Field(default=None, gt=0)
 
 
 class BracketsRequest(BaseModel):
@@ -138,6 +142,25 @@ class BacktestRequest(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     risk: RiskUpdate | None = None
     cash: float | None = Field(default=None, gt=0)
+    fee_pct: float | None = Field(default=None, ge=0, le=5)  # per trade, % of value; default: the asset's fee
+    slippage_bps: float | None = Field(default=None, ge=0, le=500)
+    split: float = Field(default=0.7, ge=0.3, le=0.9)  # walk-forward only
+
+
+class SymbolsRequest(BaseModel):
+    symbols: list[str] = Field(min_length=2, max_length=16)
+
+
+class MixRequest(BaseModel):
+    weights: dict[str, float]
+
+
+class LuckRequest(BaseModel):
+    symbol: str
+    strategy: str = "sma_cross"
+    params: dict[str, Any] = Field(default_factory=dict)
+    years: int = Field(default=5, ge=1, le=10)
+    trials: int = Field(default=500, ge=50, le=2000)
 
 
 # ---------------------------------------------------------------------- REST
@@ -206,7 +229,28 @@ async def update_risk(body: RiskUpdate):
 
 @app.post("/api/orders")
 async def place_order(body: OrderRequest):
-    return await engine.place_order(body.symbol, body.side, body.qty)
+    return await engine.place_order(body.symbol, body.side, body.qty, order_type=body.type,
+                                    limit_price=body.limit_price, risk_amount=body.risk_amount)
+
+
+@app.get("/api/orders")
+async def list_orders():
+    return engine.open_orders()
+
+
+@app.delete("/api/orders/{order_id}")
+async def cancel_order(order_id: int):
+    return await engine.cancel_order(order_id)
+
+
+@app.get("/api/assets")
+async def list_assets():
+    return assets.public_list(engine.symbols)
+
+
+@app.get("/api/market/status")
+async def us_market_status():
+    return market_status()
 
 
 @app.post("/api/positions/{symbol}/close")
@@ -234,25 +278,135 @@ async def advice(symbol: str):
     return await engine.advice(symbol)
 
 
-@app.post("/api/backtest")
-async def backtest(body: BacktestRequest):
-    if body.strategy not in STRATEGIES:
-        raise KeyError(f"Unknown strategy '{body.strategy}'. Available: {', '.join(STRATEGIES)}")
-    symbol = body.symbol.upper()
-    limits = engine.broker.limits.update(body.risk.model_dump(exclude_none=True) if body.risk else {})
+async def _load(symbol: str, interval: str, bars: int) -> list[dict]:
     try:
-        data = await fetch_history(symbol, body.interval, body.bars)
+        if interval == "1d":
+            data = await prices.cached_history(symbol, "1d", bars)
+        else:
+            data = await prices.history(symbol, interval, bars)
     except httpx.HTTPError as exc:
         raise HTTPException(400, f"Could not load history for {symbol}: {exc}") from exc
     if not data:
-        raise ValueError(f"No history returned for {symbol} {body.interval}")
+        raise ValueError(f"No history returned for {symbol} {interval}")
+    return data
+
+
+def _bars_per_year(symbol: str, interval: str) -> float:
+    """Bars per year for Sharpe: crypto trades all year; stocks ~252 days of 6.5 hours."""
+    if assets.is_crypto(symbol):
+        return bars_per_year(interval)
+    per_day = {"1m": 390, "5m": 78, "15m": 26, "1h": 7, "4h": 2, "1d": 1}[interval]
+    return 252.0 * per_day
+
+
+def _costs(body: BacktestRequest, symbol: str) -> tuple[float, float]:
+    fee = body.fee_pct / 100 if body.fee_pct is not None else assets.fee_rate(symbol, settings.fee_rate)
+    slip = body.slippage_bps if body.slippage_bps is not None else settings.slippage_bps
+    return fee, slip
+
+
+def _backtest_setup(body: BacktestRequest):
+    if body.strategy not in STRATEGIES:
+        raise KeyError(f"Unknown strategy '{body.strategy}'. Available: {', '.join(STRATEGIES)}")
+    symbol = engine.check_symbol(body.symbol)
+    limits = engine.broker.limits.update(body.risk.model_dump(exclude_none=True) if body.risk else {})
+    return symbol, limits
+
+
+@app.post("/api/backtest")
+async def backtest(body: BacktestRequest):
+    symbol, limits = _backtest_setup(body)
+    data = await _load(symbol, body.interval, body.bars)
+    fee, slip = _costs(body, symbol)
     result = await asyncio.to_thread(
         run_backtest, data, body.strategy, body.params, limits,
-        body.cash or settings.starting_cash, settings.fee_rate, settings.slippage_bps,
-        bars_per_year(body.interval), symbol,
+        body.cash or settings.starting_cash, fee, slip, _bars_per_year(symbol, body.interval), symbol,
     )
     engine.learn.record_backtest(body.strategy, result.get("metrics") or {})
     result["candles"] = data
+    result["costs"] = {"fee_pct": fee * 100, "slippage_bps": slip}
+    return result
+
+
+@app.post("/api/backtest/walkforward")
+async def backtest_walkforward(body: BacktestRequest):
+    symbol, limits = _backtest_setup(body)
+    data = await _load(symbol, body.interval, body.bars)
+    fee, slip = _costs(body, symbol)
+    result = await asyncio.to_thread(
+        walk_forward, data, body.strategy, limits, body.cash or settings.starting_cash, fee, slip,
+        _bars_per_year(symbol, body.interval), symbol, body.split,
+    )
+    engine.learn.record_backtest(body.strategy, result["out_sample"]["metrics"])
+    engine.learn.record_walkforward(result)
+    result["candles"] = data
+    result["costs"] = {"fee_pct": fee * 100, "slippage_bps": slip}
+    return result
+
+
+# ---------------------------------------------------------------------- quant lab
+def _daily_bars(symbol: str, years: int) -> int:
+    return assets.periods_per_year(symbol) * years + 1
+
+
+@app.get("/api/lab/stats/{symbol}")
+async def lab_stats(symbol: str, years: int = Query(5, ge=1, le=10)):
+    symbol = engine.check_symbol(symbol)
+    data = await prices.cached_history(symbol, "1d", _daily_bars(symbol, years))
+    result = await asyncio.to_thread(quant.stats, symbol, data)
+    engine.learn.record("stats", symbol)
+    return result
+
+
+@app.post("/api/lab/correlation")
+async def lab_correlation(body: SymbolsRequest, years: int = Query(3, ge=1, le=10)):
+    symbols = list(dict.fromkeys(engine.check_symbol(s) for s in body.symbols))
+    wanted = symbols if assets.BENCHMARK in symbols else symbols + [assets.BENCHMARK]
+    series = await prices.many_daily(wanted, max(_daily_bars(s, years) for s in wanted))
+    result = await asyncio.to_thread(quant.correlation, {s: series[s] for s in symbols})
+    if assets.BENCHMARK not in symbols:
+        full = await asyncio.to_thread(quant.correlation, series)
+        result["beta"] = {s: full["beta"].get(s) for s in symbols}
+    engine.learn.record("corr")
+    return result
+
+
+@app.post("/api/lab/mix")
+async def lab_mix(body: MixRequest, years: int = Query(3, ge=1, le=10)):
+    weights = {engine.check_symbol(s): float(w) for s, w in body.weights.items() if float(w) > 0}
+    if len(weights) < 2:
+        raise ValueError("Pick at least two assets with a weight above zero.")
+    if len(weights) > 8:
+        raise ValueError("Use at most 8 assets in a mix.")
+    series = await prices.many_daily(list(weights), max(_daily_bars(s, years) for s in weights))
+    result = await asyncio.to_thread(quant.mix, series, weights)
+    engine.learn.record_mix(result)
+    return result
+
+
+def _cost_of(symbol: str) -> float:
+    return assets.fee_rate(symbol, settings.fee_rate) + settings.slippage_bps / 10_000
+
+
+@app.post("/api/lab/luck")
+async def lab_luck(body: LuckRequest):
+    if body.strategy not in STRATEGIES:
+        raise KeyError(f"Unknown strategy '{body.strategy}'")
+    symbol = engine.check_symbol(body.symbol)
+    data = await prices.cached_history(symbol, "1d", _daily_bars(symbol, body.years))
+    result = await asyncio.to_thread(quant.luck_test, data, body.strategy, body.params, _cost_of(symbol), body.trials)
+    result.update({"symbol": symbol, "name": assets.name(symbol)})
+    engine.learn.record_luck(result)
+    return result
+
+
+@app.post("/api/lab/many")
+async def lab_many(body: LuckRequest):
+    symbol = engine.check_symbol(body.symbol)
+    data = await prices.cached_history(symbol, "1d", _daily_bars(symbol, body.years))
+    result = await asyncio.to_thread(quant.many_random, data, _cost_of(symbol))
+    result.update({"symbol": symbol, "name": assets.name(symbol)})
+    engine.learn.record("luck_many")
     return result
 
 

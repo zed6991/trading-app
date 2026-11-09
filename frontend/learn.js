@@ -2,20 +2,19 @@
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 8000;
 const VIEW_KEY = "view";
-const VIEWS = ["learn", "practice", "dashboard", "glossary"];
-// Where each challenge is done, so "Continue" can take the learner straight there.
-const CHALLENGE_VIEW = {
-  manual_buy: "practice", manual_sell: "practice", win: "practice", risk: "practice", brackets: "practice",
-  protect_exit: "practice", explain: "practice", chart: "dashboard", ticket: "dashboard", indicator: "dashboard",
-  analyze: "dashboard", backtest: "dashboard", backtest_strategy: "dashboard", beat_hold: "dashboard",
-  auto_on: "dashboard", auto_trade: "dashboard", coach_ask: "coach", coach_review: "coach",
-};
-const CHALLENGE_EVENT = {
-  "first-buy": "manual_buy", "first-sell": "manual_sell", "first-win": "win", "set-safety-net": "risk",
-  "edit-stop": "brackets", "auto-exit": "protect_exit", "view-charts": "chart", "use-ticket": "ticket",
-  "indicator-on": "indicator", "ask-ai": "analyze", "run-backtest": "backtest", "compare-strategies": "backtest_strategy",
-  "beat-hold": "beat_hold", "auto-on": "auto_on", "explain-trade": "explain", "auto-trade": "auto_trade",
-  "ask-coach": "coach_ask", "weekly-review": "coach_review",
+const VIEWS = ["learn", "practice", "dashboard", "lab", "glossary"];
+const TOP_LEVEL = 13; // levels 8-13 are on the roadmap
+// Where each challenge's event happens, so "Go" can take the learner straight there. Lab events also pick the tab.
+const EVENT_VIEW = {
+  manual_buy: "practice", manual_sell: "practice", buy_stock: "practice", buy_crypto: "practice",
+  limit_order: "practice", limit_fill: "practice", win: "practice", risk: "practice", risk_sized: "practice",
+  brackets: "practice", protect_exit: "practice", explain: "practice",
+  chart: "dashboard", ticket: "dashboard", indicator: "dashboard", analyze: "dashboard", auto_on: "dashboard",
+  auto_trade: "dashboard",
+  stats: "lab:stats", corr: "lab:corr", mix_calm: "lab:mix", mix_cross: "lab:mix", luck_test: "lab:luck",
+  luck_many: "lab:luck", luck_beat95: "lab:luck", backtest: "lab:backtest", backtest_strategy: "lab:backtest",
+  beat_hold: "lab:backtest", walkforward: "lab:backtest", oos_beat_hold: "lab:backtest",
+  coach_ask: "coach", coach_review: "coach",
 };
 
 let course = null; // GET /api/learn
@@ -63,6 +62,7 @@ const levelNow = () => course?.level || 1;
 function setView(next) {
   if (!VIEWS.includes(next)) next = "learn";
   if (next === "dashboard" && levelNow() < 3) next = "learn";
+  if (next === "lab" && levelNow() < 4) next = "learn";
   view = next;
   const body = document.body;
   VIEWS.forEach((v) => body.classList.toggle(`view-${v}`, v === next));
@@ -77,10 +77,11 @@ function applyLevel(n) {
   const body = document.body;
   const before = Number(body.dataset.level) || 0;
   body.dataset.level = String(n);
-  for (let i = 1; i <= 6; i += 1) body.classList.toggle(`unlock-${i}`, i <= n);
+  const top = course?.unlock_all ? TOP_LEVEL : n;
+  for (let i = 1; i <= TOP_LEVEL; i += 1) body.classList.toggle(`unlock-${i}`, i <= top);
   $("level-pill").textContent = course?.finished ? "Graduate" : `Level ${n}`;
   if (before !== n) window.dispatchEvent(new Event("learn:level"));
-  if (view === "dashboard" && n < 3) setView("learn");
+  if ((view === "dashboard" && n < 3) || (view === "lab" && n < 4)) setView("learn");
 }
 
 // ---------------------------------------------------------------- course data
@@ -111,6 +112,7 @@ function nextStep() {
 // ---------------------------------------------------------------- course home
 function statusBadge(lvl) {
   if (lvl.status === "done") return `<span class="l-badge done" aria-label="Done">✓</span>`;
+  if (lvl.status === "soon") return `<span class="l-badge soon">Soon</span>`;
   if (lvl.status === "locked") {
     return `<span class="l-badge locked" aria-label="Locked"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none"/></svg></span>`;
   }
@@ -146,8 +148,10 @@ function renderHome() {
   $("learn-home").hidden = false;
   $("lesson").hidden = true;
   const cur = levelOf(levelNow());
-  $("l-kicker").textContent = course.finished ? "Course complete" : `Level ${cur.n} of ${course.max_level}`;
-  $("l-title").textContent = course.finished ? "You've finished the course. Keep practising." : cur.title;
+  const total = course.total_levels || course.max_level;
+  $("l-kicker").textContent = course.finished ? `${course.title || "Your course"}: levels 1-${course.max_level} complete`
+    : `${course.title || "Your course"} · Level ${cur.n} of ${total}`;
+  $("l-title").textContent = course.finished ? `You've finished every level built so far. Levels ${course.max_level + 1}-${total} are coming.` : cur.title;
   $("l-progress-fill").style.width = `${course.percent}%`;
   $("l-progress-text").textContent = course.unlock_all
     ? "Everything is unlocked. The lessons are still here whenever you want them."
@@ -161,13 +165,16 @@ function renderHome() {
     btn.onclick = () => (step.kind === "lesson" ? openLesson(step.item.id) : goChallenge(step.item.id));
   }
 
-  $("l-levels").innerHTML = course.levels.map((lvl) => {
+  let phase = "";
+  $("l-levels").innerHTML = [...course.levels, ...(course.roadmap || [])].map((lvl) => {
+    const phaseHead = lvl.phase && lvl.phase !== phase ? `<li class="l-phase">${esc(lvl.phase)}</li>` : "";
+    phase = lvl.phase || phase;
     const head = `<div class="l-level-head">${statusBadge(lvl)}<div><h2>Level ${lvl.n}: ${esc(lvl.title)}</h2><p>${esc(lvl.summary)}</p></div></div>`;
-    if (lvl.status === "locked") {
-      return `<li class="l-level locked">${head}<p class="l-unlocks"><b>Unlocks:</b> ${lvl.unlocks.map(esc).join(" · ")}</p></li>`;
+    if (lvl.status === "locked" || lvl.status === "soon") {
+      return `${phaseHead}<li class="l-level ${lvl.status}">${head}<p class="l-unlocks"><b>${lvl.status === "soon" ? "Coming soon" : "Unlocks"}:</b> ${lvl.unlocks.map(esc).join(" · ")}</p></li>`;
     }
     const open = lvl.status === "current" ? " open" : "";
-    return `<li class="l-level ${lvl.status}"><details${open}><summary>${head}</summary>${levelBody(lvl)}</details></li>`;
+    return `${phaseHead}<li class="l-level ${lvl.status}"><details${open}><summary>${head}</summary>${levelBody(lvl)}</details></li>`;
   }).join("");
 
   $("l-foot").innerHTML = course.unlock_all
@@ -177,12 +184,15 @@ function renderHome() {
 }
 
 function goChallenge(id) {
-  const target = CHALLENGE_VIEW[CHALLENGE_EVENT[id]] || "practice";
+  const ch = course?.levels.flatMap((l) => l.challenges).find((c) => c.id === id);
+  const target = EVENT_VIEW[ch?.event] || "practice";
   if (target === "coach") {
     window.dispatchEvent(new CustomEvent("learn:open-coach", { detail: id === "weekly-review" ? "review" : null }));
     return;
   }
-  setView(target);
+  const [where, labTab] = target.split(":");
+  if (labTab) window.dispatchEvent(new CustomEvent("lab:open", { detail: labTab }));
+  setView(where);
 }
 
 async function footAction(btn) {
@@ -227,6 +237,10 @@ function closeLesson() {
 
 function renderVisual(name) {
   if (name === "live-price") return `<div class="l-visual l-live"><span>Bitcoin right now</span><b data-live="BTCUSDT">…</b></div>`;
+  if (name === "live-prices") {
+    return `<div class="l-visual l-live two"><div><span>SPY (500 US companies) right now</span><b data-live="SPY">…</b></div>
+      <div><span>Bitcoin right now</span><b data-live="BTCUSDT">…</b></div></div>`;
+  }
   if (name === "account") return `<div class="l-visual l-live"><span>Your practice account</span><b data-live="equity">…</b><small data-live="cash"></small></div>`;
   if (name === "candle") {
     return `<figure class="l-visual"><svg viewBox="0 0 320 180" role="img" aria-label="Two candlesticks: green with open at the bottom and close at the top, red with open at the top and close at the bottom. Wicks show the high and low.">

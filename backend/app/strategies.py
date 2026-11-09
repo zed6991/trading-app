@@ -170,8 +170,40 @@ class BollingerBreakout(Strategy):
             return _combine(close > upper, close < mid)
 
 
+class Momentum(Strategy):
+    name = "momentum"
+    description = ("Momentum: buy when the price is up more than `threshold` over the last `lookback` bars; sell when "
+                   "it's down over that period.")
+    default_params = {"lookback": 63, "threshold": 0.0}
+
+    def _validate(self) -> None:
+        if self.params["lookback"] < 2 or not 0 <= self.params["threshold"] < 1:
+            raise ValueError("require lookback >= 2 and 0 <= threshold < 1")
+
+    @property
+    def min_bars(self) -> int:
+        return self.params["lookback"] + 1
+
+    def _signals(self, close: np.ndarray) -> list[Signal]:
+        n = self.params["lookback"]
+        change = np.full(len(close), np.nan)
+        change[n:] = close[n:] / close[:-n] - 1
+        with np.errstate(invalid="ignore"):
+            return _combine(change > self.params["threshold"], change < 0)
+
+
 STRATEGIES: dict[str, type[Strategy]] = {
-    cls.name: cls for cls in (SmaCross, EmaMacd, RsiReversion, BollingerBreakout)
+    cls.name: cls for cls in (SmaCross, EmaMacd, RsiReversion, BollingerBreakout, Momentum)
+}
+
+# Small settings grids used by walk-forward tests (the "tuning" step).
+GRIDS: dict[str, list[dict]] = {
+    "sma_cross": [{"fast": f, "slow": s} for f in (5, 10, 20) for s in (30, 50, 100)],
+    "ema_macd": [{"fast": f, "slow": s, "trend": t} for f, s in ((8, 21), (12, 26)) for t in (50, 100, 200)],
+    "rsi_reversion": [{"period": p, "oversold": o, "overbought": b} for p in (7, 14) for o in (20.0, 30.0)
+                      for b in (60.0, 70.0)],
+    "bollinger_breakout": [{"period": p, "num_std": k} for p in (10, 20, 40) for k in (1.5, 2.0, 2.5)],
+    "momentum": [{"lookback": n, "threshold": t} for n in (21, 63, 126, 252) for t in (0.0, 0.05)],
 }
 
 

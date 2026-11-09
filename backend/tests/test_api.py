@@ -26,6 +26,7 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import main  # noqa: E402
+from app.learn import LESSONS, choice_order  # noqa: E402
 from app.engine import TradingEngine  # noqa: E402
 
 # If another test module imported app.config before us, the env above was not applied at import time,
@@ -230,7 +231,7 @@ def test_advice_gives_one_plain_action(client, monkeypatch):
         return {"symbol": symbol, "recommendation": verdict, "bias": "neutral", "confidence": 0.5,
                 "summary": "Plain words.", "source": "test"}
 
-    monkeypatch.setattr("app.engine.fetch_history", history)
+    monkeypatch.setattr("app.prices.history", history)
     monkeypatch.setattr(main.engine.ai, "analyze", analyze)
     client.post("/api/account/reset")
 
@@ -250,10 +251,14 @@ def test_advice_gives_one_plain_action(client, monkeypatch):
 
 def test_learning_api(client):
     s = client.get("/api/learn").json()
-    assert s["level"] == 1 and len(s["levels"]) == 6 and s["levels"][1]["status"] == "locked"
-    lesson = client.get("/api/learn/lessons/l1-what-is-trading").json()
+    assert s["level"] == 1 and len(s["levels"]) == 7 and s["levels"][1]["status"] == "locked"
+    assert [r["n"] for r in s["roadmap"]] == [8, 9, 10, 11, 12, 13] and s["total_levels"] == 13
+    lesson = client.get("/api/learn/lessons/l1-markets").json()
     assert lesson["cards"] and "answer" not in lesson["quiz"][0]
-    r = client.post("/api/learn/lessons/l1-what-is-trading/answer", json={"question": 0, "choice": 0}).json()
+    q = LESSONS["l1-markets"]["quiz"][0]
+    shown = choice_order("l1-markets", 0, len(q["choices"])).index(q["answer"])
+    assert lesson["quiz"][0]["choices"][shown] == q["choices"][q["answer"]]
+    r = client.post("/api/learn/lessons/l1-markets/answer", json={"question": 0, "choice": shown}).json()
     assert r["correct"] is True and r["why"]
     assert client.post("/api/learn/lessons/l2-stops/answer", json={"question": 0, "choice": 1}).status_code == 400
     assert client.post("/api/learn/events", json={"name": "chart", "value": "BTCUSDT"}).status_code == 200
@@ -268,5 +273,45 @@ def test_explain_trade_api(client):
     assert e["trade_id"] == sell["id"] and e["headline"].startswith("You ") and e["source"] == "rules"
     assert client.post(f"/api/trades/{buy['id']}/explain").json()["headline"].startswith("You bought")
     assert client.post("/api/trades/999999/explain").status_code == 400
-    counts = client.get("/api/learn").json()["levels"][0]["challenges"]
-    assert counts[0]["done"] and counts[1]["done"]
+    done = {c["id"]: c["done"] for c in client.get("/api/learn").json()["levels"][0]["challenges"]}
+    assert done["buy-crypto"] and done["first-sell"] and not done["buy-stock"]
+
+
+def test_risk_sized_and_limit_orders(client):
+    import asyncio
+
+    client.post("/api/account/reset", json={"cash": 100_000})
+    eng = main.engine
+    eng.market.last_price["BTCUSDT"] = BTC_PRICE
+    eng.market.last_price["ETHUSDT"] = 2_500.0
+    client.put("/api/risk", json={"stop_loss_pct": 0.02, "max_position_pct": 0.2, "max_open_positions": 3})
+    # Risk $300 with the default 2% stop at $50,000 -> 0.3 BTC ($15,000).
+    fill = client.post("/api/orders", json={"symbol": "BTCUSDT", "side": "buy", "risk_amount": 300}).json()
+    assert fill["qty"] == pytest.approx(0.3)
+    assert eng.learn.p["counts"]["risk_sized"] == 1
+    too_big = client.post("/api/orders", json={"symbol": "ETHUSDT", "side": "buy", "risk_amount": 5000})
+    assert too_big.status_code == 400 and "position-size limit" in too_big.json()["detail"]
+
+    order = client.post("/api/orders", json={"symbol": "ETHUSDT", "side": "buy", "type": "limit",
+                                             "limit_price": 2_400.0}).json()
+    assert order["status"] == "waiting" and "falls to" in order["note"]
+    assert [o["symbol"] for o in client.get("/api/orders").json()] == ["ETHUSDT"]
+    dup = client.post("/api/orders", json={"symbol": "ETHUSDT", "side": "buy", "type": "limit", "limit_price": 1.0})
+    assert dup.status_code == 400
+    asyncio.run(eng.check_orders("ETHUSDT", 2_450.0))
+    assert eng.orders  # not reached yet
+    asyncio.run(eng.check_orders("ETHUSDT", 2_390.0))
+    assert not eng.orders and "ETHUSDT" in eng.broker.positions
+    last = client.get("/api/trades?limit=1").json()[0]
+    assert last["reason"] == "limit" and last["side"] == "buy"
+    assert eng.learn.p["counts"]["limit_fill"] == 1
+
+    sell = client.post("/api/orders", json={"symbol": "BTCUSDT", "side": "sell", "type": "limit",
+                                            "limit_price": 60_000.0}).json()
+    assert client.delete(f"/api/orders/{sell['id']}").json() == []
+    assert client.delete(f"/api/orders/{sell['id']}").status_code == 400
+    assert client.post("/api/orders", json={"symbol": "SOLUSDT", "side": "buy"}).status_code == 400
+    s = client.get("/api/state").json()
+    assert {a["symbol"]: a["kind"] for a in s["assets"]} == {"BTCUSDT": "crypto", "ETHUSDT": "crypto"}
+    assert "us_market" in s["status"] and s["orders"] == []
+    client.post("/api/account/reset")

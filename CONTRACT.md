@@ -7,7 +7,7 @@ Tests in `backend/tests`, run with `cd backend && ../.venv/bin/python -m pytest 
 Already written (do not modify): `app/config.py` (`settings`), `app/db.py` (`Database`), `app/indicators.py`
 (`sma, ema, rsi, macd, bollinger, atr, snapshot(candles)->dict, series(candles)->dict`).
 
-Paper trading only, long-only spot crypto (Binance). No placeholders, TODOs or truncated code.
+Paper trading only, long-only: US stocks/ETFs (Yahoo Finance) and spot crypto (Binance). No placeholders, TODOs or truncated code.
 
 ## Candle dict (used everywhere)
 `{"time": int (open time, unix SECONDS), "open": float, "high": float, "low": float, "close": float, "volume": float, "closed": bool}`
@@ -100,3 +100,26 @@ Client may send `{"type":"ping"}` -> server replies `{"type":"pong"}`.
 No build step, no npm. `frontend/index.html`, `frontend/styles.css`, `frontend/app.js` (ES module, vanilla JS).
 Charts: `https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js` (global `LightweightCharts`).
 Same-origin API (`/api/...`, `ws(s)://<host>/ws`).
+
+
+## v2 additions: stocks, orders and the Quant Lab
+
+- `app/assets.py`: `ASSETS` registry (`symbol, name, kind: stock|etf|crypto, sector`), `asset/kind/is_crypto/name`,
+  `fee_rate(symbol, crypto_fee)` (0 for stocks/ETFs), `periods_per_year` (252 or 365), `public_list(symbols)`.
+- `app/stocks.py`: `market_status(now?) -> {open, opens_at, closes_at, label}` (NYSE hours, holidays, early closes),
+  `parse_chart(payload, interval)` (daily bars split/dividend-adjusted, time = UTC midnight of the NY date),
+  `fetch_stock_history(symbol, interval in 1m|5m|15m|1h|1d, bars)`, `StockFeed` (same interface as `MarketData`,
+  polls 1m bars every 15 s while open, 5 min while closed).
+- `app/prices.py`: `history(symbol, interval, bars)` dispatches by asset; `cached_history` (6 h cache, closed bars
+  only); `many_daily(symbols, bars)`.
+- `app/engine.py`: `CombinedMarket` (crypto + stocks share one `candles` and `last_price` dict). `place_order(...,
+  order_type, limit_price, risk_amount)`; limit orders live in kv `orders` and fill in `check_orders` on price updates
+  (stocks only while the US market is open). Market orders on stocks while closed fill at the last price and return
+  a `note`. Fill reasons now include `limit`.
+- `app/broker.py`: `PaperBroker(..., fee_rate_for=callable)` for per-symbol fees.
+- `app/strategies.py`: adds `momentum` (`lookback`, `threshold`) and `GRIDS` (settings tried by walk-forward).
+- `app/backtest.py`: `run_backtest(..., trade_from=0)` (earlier bars only warm up indicators) and
+  `walk_forward(candles, strategy, limits, cash, fee_rate, slippage_bps, bars_per_year, symbol, split, grid)`.
+- `app/quant.py`: `stats`, `align`, `correlation`, `mix`, `luck_test`, `many_random` (daily candles in, JSON out).
+- `app/curriculum.py`: `GLOSSARY`, `LEVELS` (built), `ROADMAP` (coming soon), `COURSE_OUTLINE`, `TOTAL_LEVELS`.
+- WebSocket adds message type `orders` (list of waiting limit orders).

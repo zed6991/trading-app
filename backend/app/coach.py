@@ -12,7 +12,7 @@ import time
 from typing import Any
 
 from app.ai import _extract_json, _trim_summary, coin_name
-from app.learn import (GLOSSARY, GLOSSARY_BY_SLUG, LESSON_LEVEL, LESSONS, LEVELS, TERM_RE, Learning, _held,
+from app.learn import (GLOSSARY, GLOSSARY_BY_SLUG, LESSON_LEVEL, LESSONS, LEVELS, MAX_LEVEL, TERM_RE, Learning, _held,
                        _money)
 
 logger = logging.getLogger("app.coach")
@@ -25,9 +25,7 @@ MAX_MESSAGE_CHARS = 600
 MAX_ANSWER_CHARS = 1200
 REVIEW_KEY = "coach:review"
 
-LEVEL_TOPICS = ("1 basics (price, cash, equity, P&L, fees)", "2 stop-loss, take-profit, position size, drawdowns",
-                "3 candlestick charts, trends, support and resistance", "4 indicators: moving averages, RSI, MACD, "
-                "Bollinger Bands", "5 strategies and backtesting", "6 auto-trading, AI filter, trading plan, psychology")
+LEVEL_TOPICS = tuple(f"{lvl['n']} {lvl['title'].lower()}" for lvl in LEVELS)
 
 
 # --------------------------------------------------------------------------------------------- facts
@@ -119,30 +117,30 @@ def observations(s: dict, limits: dict, level: int) -> list[dict]:
     if s["avg_win"] is not None and s["avg_loss"] is not None:
         if s["avg_win"] >= abs(s["avg_loss"]):
             add("good", f"Your average win ({_money(s['avg_win'])}) is bigger than your average loss "
-                        f"({_money(s['avg_loss'])}). That's the habit that makes money over time.", "l1-what-is-trading", 2)
+                        f"({_money(s['avg_loss'])}). That's the habit that makes money over time.", "l2-sizing", 2)
         else:
             add("work", f"Your average loss ({_money(s['avg_loss'])}) is bigger than your average win "
                         f"({_money(s['avg_win'])}). Even if you win often, that adds up against you.",
-                "l2-stops" if level >= 2 else "l1-what-is-trading", 3)
+                "l2-stops" if level >= 2 else "l2-sizing", 3)
     elif s["wins"] and not s["losses"]:
         add("good", f"All {s['wins']} closed trade{'s were' if s['wins'] != 1 else ' was a'} "
                     f"win{'s' if s['wins'] != 1 else ''}. Enjoy it, but losses are normal and will come.", None)
     if s["closed"] and s["fees"] > 0 and s["gross_pnl"] > 0 and s["fees"] >= 0.5 * s["gross_pnl"]:
         add("work", f"Fees came to {_money(s['fees'])}, which ate at least half of what your trades made before fees.",
-            "l1-your-account", 3)
+            "l1-account", 3)
     elif s["net_pnl"] < 0 and s["gross_pnl"] <= 0 and s["closed_fees"] >= abs(s["gross_pnl"]):
         add("work", f"Fees cost you {_money(s['closed_fees'])}, more than the price moves did "
                     f"({_money(s['gross_pnl'])}). Trades that end quickly pay the fees without giving the price time "
-                    "to move.", "l1-your-account", 3)
+                    "to move.", "l1-account", 3)
     elif s["closed"] >= 3 and s["closed_fees"] > 0 and s["gross_pnl"] < 0:
         add("work", f"You paid {_money(s['closed_fees'])} in fees on top of the losses. Fewer, better-planned trades "
-                    "cost less.", "l1-your-account", 2)
+                    "cost less.", "l1-account", 2)
     if s["quick_flips"] >= 3:
         add("work", f"{s['quick_flips']} trades were sold within 5 minutes of buying. Prices wobble a lot over minutes, "
-                    "so very short trades are mostly luck plus fees.", "l1-your-account", 2)
+                    "so very short trades are mostly luck plus fees.", "l1-account", 2)
     if s["rebuys_after_loss"] >= 2:
         add("work", f"{s['rebuys_after_loss']} times you bought again within 10 minutes of a loss. Rushing back in to win "
-                    "it back usually makes losses bigger.", "l6-plan", 3)
+                    "it back usually makes losses bigger.", "l2-drawdowns", 3)
     if s["manual_losses"] >= 2 and level >= 2:
         add("work", f"{s['manual_losses']} losing trades were sold by hand. Setting your exit before you buy takes the "
                     "panic out of it.", "l2-stops", 2)
@@ -151,7 +149,7 @@ def observations(s: dict, limits: dict, level: int) -> list[dict]:
                     f"{'them' if s['closed'] != 1 else 'it'}. That's how traders get better.", None)
     if level >= 2:
         if not limits.get("stop_loss_pct"):
-            add("work", "Your stop-loss is switched off, so a falling coin can keep losing with nothing to stop it.",
+            add("work", "Your stop-loss is switched off, so a falling position can keep losing with nothing to stop it.",
                 "l2-stops", 3)
         if (limits.get("max_position_pct") or 0) > 0.25:
             add("work", f"You put {limits['max_position_pct'] * 100:.0f}% of your account into each trade. Two or "
@@ -279,7 +277,7 @@ class Coach:
         draft = {k: review[k] for k in ("headline", "went_well", "work_on", "next_step")}
         system = (
             "You are a warm, honest trading coach writing a short weekly review for a beginner who practises with "
-            f"pretend money. They are on level {level} of 6 ({'; '.join(LEVEL_TOPICS)}). "
+            f"pretend money. They are on level {level} of {MAX_LEVEL} ({'; '.join(LEVEL_TOPICS)}). "
             "Rewrite the draft so it reads like a coach talking to them: plain English, short sentences, "
             "encouraging but truthful. Keep every number exactly as given and add no new numbers, prices or facts. "
             "Only use trading words from their level or below. Never promise profit or tell them to use real money. "
@@ -321,7 +319,8 @@ class Coach:
         later = sorted(f"{g['term']} (level {g['level']})" for g in GLOSSARY if g["level"] > level)
         acct = self.engine.account()
         lines = [
-            f"Learner level: {level} of 6 ({LEVELS[level - 1]['title']}). Course {summary['percent']}% done.",
+            f"Learner level: {level} of {MAX_LEVEL} built levels ({LEVELS[level - 1]['title']}). "
+            f"Course {summary['percent']}% done.",
             f"Lessons finished: {', '.join(done) if done else 'none yet'}.",
             f"Words they have learned: {', '.join(taught)}.",
             f"Words not taught yet: {', '.join(later) if later else 'none'}.",
@@ -335,7 +334,7 @@ class Coach:
                 f"({p['pnl_pct']:+.2f}%), stop-loss {_money(p['stop_loss']) if p['stop_loss'] else 'none'}, "
                 f"take-profit {_money(p['take_profit']) if p['take_profit'] else 'none'}.")
         if not acct["positions"]:
-            lines.append("Owns no coins right now.")
+            lines.append("Owns nothing right now (all cash).")
         risk = self.engine.risk()
         lines.append(f"Safety net: stop-loss {risk['stop_loss_pct'] * 100:.1f}%, take-profit "
                      f"{risk['take_profit_pct'] * 100:.1f}%, {risk['max_position_pct'] * 100:.0f}% of account per trade.")
@@ -343,7 +342,7 @@ class Coach:
         for r in rounds:
             how = {"manual": "sold by hand", "stop_loss": "sold automatically by the stop-loss",
                    "take_profit": "sold automatically by the take-profit", "trailing_stop": "sold by the trailing stop",
-                   "signal": "sold by the auto-trading strategy"}.get(r["reason"], r["reason"])
+                   "signal": "sold by the auto-trading strategy", "limit": "sold by a limit order"}.get(r["reason"], r["reason"])
             bought = f"bought at {_money(r['entry'])}, " if r["entry"] else ""
             lines.append(f"Recent closed trade: {r['coin']}, {bought}sold at {_money(r['exit'])}, {how}"
                          + (f" after {_held(r['held'])}" if r["held"] is not None else "")
@@ -352,8 +351,12 @@ class Coach:
         prices = self.engine.prices()
         if prices:
             lines.append("Live prices: " + ", ".join(f"{coin_name(s)} {_money(v)}" for s, v in prices.items()) + ".")
+        status = (self.engine.status().get("us_market") or {}) if hasattr(self.engine, "status") else {}
+        if status.get("label"):
+            lines.append(status["label"] + ". Crypto trades 24/7.")
         where = {"learn": "the course page", "practice": "the Practice screen (simple buy/sell)",
-                 "dashboard": "the Dashboard (charts and tools)", "glossary": "the Glossary"}.get(view or "", None)
+                 "dashboard": "the Charts screen (charts and order ticket)", "lab": "the Lab (stats, correlation, "
+                 "luck test and backtester)", "glossary": "the Glossary"}.get(view or "", None)
         if where:
             lines.append(f"They are looking at {where}" + (f", with {coin_name(symbol.upper())} selected." if symbol else "."))
         step = self.next_step()
@@ -365,14 +368,17 @@ class Coach:
 
     def _system_prompt(self, level: int) -> str:
         return (
-            "You are the coach inside a trading course app. The learner practises crypto trading with pretend money "
-            "and real prices, and learns level by level "
+            "You are the coach inside a course that takes a complete beginner to AI-powered quant trader. The "
+            "learner practises trading US stocks, ETFs and crypto with pretend money and real prices, and learns "
+            "level by level "
             f"({'; '.join(LEVEL_TOPICS)}). They are on level {level}.\n"
             "How to answer:\n"
             "- Teach, don't decide. Explain the idea and what to look at, then leave the choice to them. If they ask "
             "whether to buy or sell, don't answer yes or no. Walk them through the checks for their level (level 1: how "
-            "much they could lose and the fees; level 2: where the stop-loss and take-profit would be and how much to "
-            "put in; level 3+: what the chart shows; level 4+: whether indicators agree), mention the app's "
+            "much they could lose, costs and whether the market is open; level 2: where the stop-loss would be and "
+            "sizing by the dollars at risk; level 3+: what the chart shows; level 4+: the asset's volatility and "
+            "drawdowns; level 5+: how it fits with what they already own; level 6+: whether there's evidence of an "
+            "edge or just luck; level 7+: whether it was tested out-of-sample with costs), mention the app's "
             "suggestion on the Practice screen is an educated guess, and say it's their call.\n"
             "- Plain English and short sentences, like a friendly teacher. Use dollar examples before percentages.\n"
             "- Only use words they have learned. If you must use a word not taught yet, explain it in a few words and "

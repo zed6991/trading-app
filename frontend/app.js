@@ -753,7 +753,7 @@ function onTick(data) {
     renderLegend();
   }
   updateOrderEstimate();
-  document.title = `${fmtPrice(candle.close)} ${symbol} · Paper Trader AI`;
+  document.title = `${fmtPrice(candle.close)} ${symbol} · Quant Path`;
 }
 
 // =====================================================================================
@@ -764,7 +764,7 @@ function renderTabs() {
   box.replaceChildren();
   for (const sym of S.symbols) {
     const btn = el("button", { type: "button", class: "sym-tab", role: "tab", dataset: { symbol: sym }, onclick: () => selectSymbol(sym) },
-      el("span", { class: "sym-name" }, el("span", { text: sym }), el("i", { class: "sym-pos", hidden: true })),
+      el("span", { class: "sym-name" }, el("span", { text: sym.replace(/USDT$/, "") }), el("i", { class: "sym-pos", hidden: true })),
       el("span", { class: "sym-line" }, el("span", { class: "sym-px", text: "—" }), el("span", { class: "sym-chg", text: "" })));
     box.append(btn);
     updateTab(sym);
@@ -911,11 +911,17 @@ function renderStatus() {
   setStatusItem("#st-ws", S.wsUp ? "ok" : "bad", S.wsUp ? "Dashboard feed connected" : "Dashboard feed disconnected — reconnecting");
   if (!S.wsUp) {
     setStatusItem("#st-market", "", "Market status unknown (feed disconnected)");
+    setStatusItem("#st-stocks", "", "Market status unknown (feed disconnected)");
     setStatusItem("#st-ai", "", "AI status unknown (feed disconnected)");
     return;
   }
   const st = S.status || {};
-  setStatusItem("#st-market", st.market_connected ? "ok" : "bad", st.market_connected ? "Binance stream connected" : "Binance stream disconnected");
+  const crypto = st.crypto_connected ?? st.market_connected;
+  setStatusItem("#st-market", crypto ? "ok" : "bad", crypto ? "Crypto prices live (Binance)" : "Crypto prices disconnected");
+  const us = st.us_market || {};
+  $("#st-stocks-label").textContent = us.open ? "Stocks · open" : "Stocks · closed";
+  setStatusItem("#st-stocks", st.stocks_connected ? (us.open ? "ok" : "warn") : "bad",
+    `${st.stocks_connected ? "US stock prices loading (Yahoo Finance, may be delayed up to 15 min)" : "US stock prices unavailable"}. ${us.label || ""}`);
   const model = st.ai_model || "";
   $("#st-ai-label").textContent = model ? `AI · ${model.length > 22 ? `${model.slice(0, 21)}…` : model}` : "AI";
   setStatusItem("#st-ai", st.ai_available ? "ok" : "warn",
@@ -1686,7 +1692,7 @@ async function runBacktest(e) {
   const bars = Number($("#bt-bars").value);
   const strategy = $("#bt-strategy").value;
   const cash = Number($("#bt-cash").value);
-  if (!symbol) return showMsg(msg, "Enter a symbol, e.g. BTCUSDT");
+  if (!symbol) return showMsg(msg, "Enter a symbol, e.g. SPY or BTCUSDT");
   if (!Number.isInteger(bars) || bars < 50 || bars > 5000) return showMsg(msg, "Bars must be a whole number between 50 and 5000");
   if (!isNum(cash) || cash <= 0) return showMsg(msg, "Starting cash must be positive");
   if (!strategy) return showMsg(msg, "Pick a strategy");
