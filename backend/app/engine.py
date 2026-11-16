@@ -107,7 +107,11 @@ class TradingEngine:
         self.researcher = Researcher(self.db, self.llm)
         self.agent = Agent(self)
         self.capstone = Capstone(self)
+        from app.live import GoLive
+
+        self.live = GoLive(self)
         self._agent_task: asyncio.Task | None = None
+        self._live_task: asyncio.Task | None = None
         self.lock = asyncio.Lock()
         self.coach = Coach(self)
         self.broker = self._load_broker()
@@ -191,6 +195,7 @@ class TradingEngine:
         self._status_task = asyncio.create_task(self._status_loop(), name="engine-status")
         if self.enable_market:
             self._agent_task = asyncio.create_task(self.agent.loop(), name="agent-loop")
+            self._live_task = asyncio.create_task(self.live.loop(), name="live-sync")
 
     async def _start_market(self) -> None:
         while self._running:
@@ -213,10 +218,10 @@ class TradingEngine:
 
     async def stop(self) -> None:
         self._running = False
-        for task in [self._status_task, self._market_task, self._agent_task, *self._tasks]:
+        for task in [self._status_task, self._market_task, self._agent_task, self._live_task, *self._tasks]:
             if task and not task.done():
                 task.cancel()
-        for task in [self._status_task, self._market_task, self._agent_task, *self._tasks]:
+        for task in [self._status_task, self._market_task, self._agent_task, self._live_task, *self._tasks]:
             if task:
                 try:
                     await task
@@ -229,6 +234,10 @@ class TradingEngine:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Market stop failed: %r", exc)
         self.persist_broker()
+        try:
+            await self.live.close()
+        except Exception:  # noqa: BLE001
+            pass
         self.db.log("info", "Engine stopped")
         try:
             self.db.conn.close()

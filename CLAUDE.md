@@ -8,14 +8,14 @@ matching topic is taught.
 
 ## The course (content in `backend/app/curriculum.py`, progress in `backend/app/learn.py`)
 
-All 13 levels are built: 1 how markets work → 2 risk first → 3 charts and classic signals → 4 returns and volatility →
+All 14 levels are built: 1 how markets work → 2 risk first → 3 charts and classic signals → 4 returns and volatility →
 5 how assets move together → 6 edge or luck? → 7 testing strategies properly → 8 Python for quants → 9 your strategy
 in code → 10 portfolios and factors → 11 machine-learning signals → 12 LLMs as research analysts → 13 agents and the
-capstone. `ROADMAP` is for future levels (shown as "coming soon").
+capstone → 14 real money, safely (Go live, `app/live.py`, `frontend/live.js`). `ROADMAP` is for future levels (shown as "coming soon").
 
 A level is complete when every lesson quiz is answered correctly and every non-bonus challenge is done; that unlocks
 the next level. Level N's features are usable while on level N (frontend: `data-unlock="N"`, hidden until
-`body.unlock-N`, gating CSS covers 2-13). Quiz choices are shuffled per question by `choice_order` and answers are
+`body.unlock-N`, gating CSS covers 2-14). Quiz choices are shuffled per question by `choice_order` and answers are
 checked on the server. "Unlock everything" exists for experienced users.
 
 Assets live in `backend/app/assets.py` (names, kind stock/etf/crypto, fees). Stocks come from Yahoo Finance
@@ -45,6 +45,14 @@ toggling indicators, using the order ticket) go through `POST /api/learn/events`
 - **Protect the user by default.** Conservative risk limits, auto-trading hidden until level 13 and opted in, no
   implied guaranteed profit. This is paper trading. The agent proposes and the learner approves (auto mode is
   opt-in at level 13); rules set trade sizes, the LLM may only flag concerns. Keep the kill switch working.
+- **Real money only behind the gates (`app/live.py`).** The agent's approved proposals go to the app's paper account
+  (`sim`) unless the learner switches the route to Alpaca paper or live. Live needs: course really finished (not
+  unlock-all), final capstone report, the evidence check passing (exact strategy settings beat buy & hold after costs
+  in the last 30% of history and 95% of random traders; only passing symbols trade), 20 days and 3 fills on Alpaca
+  paper, live keys, a cap, and a typed confirmation. Live: approve every order with a confirm (never auto), whole
+  shares, US stocks/ETFs only, a GTC stop-loss after each fill, buys paused at -2% on the day, stale/drifted proposals
+  refused, and the kill switch cancels the app's orders and sells only shares the app bought. Keys stay in `.env`;
+  never send them to the browser. No challenge may require a real-money trade. Tests use a fake Alpaca (`test_live.py`).
 - **AI is optional (off by default).** Every feature must work with `engine.llm.enabled == False`: then
   `llm.chat` raises `AIOff`, the status loop doesn't contact Ollama, and callers use their rule-based path
   (`rule_based_analysis`, `rule_explanation`, coach rules, `research.rule_extract` / `lexicon_score`,

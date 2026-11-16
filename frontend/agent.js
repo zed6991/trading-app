@@ -42,10 +42,11 @@ function proposalCard(p) {
   return `<article class="ag-prop ${p.flagged ? "flagged" : ""}">
     <header><b class="${p.side === "buy" ? "up" : "down"}">${p.side === "buy" ? "Buy" : "Sell"} ${esc(p.name)}</b>
       <span class="mono">${money(p.notional)}</span>${p.stop_loss ? `<span class="muted">stop ${money(p.stop_loss)}${p.risk_dollars ? ` · risks ~${money(p.risk_dollars)}` : ""}</span>` : ""}
-      <span class="muted">${ago(p.created)}</span></header>
+      <span class="muted">${ago(p.created)}</span>${p.route === "alpaca_live" ? '<span class="lv-real">REAL MONEY</span>'
+        : p.route === "alpaca_paper" ? '<span class="l-tag">Alpaca paper</span>' : ""}</header>
     <ul>${p.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>
     <p class="ag-ai ${p.flagged ? "down" : ""}">${p.flagged ? "⚠ Flagged: " : ""}${esc(ai.note || "no note")}${ai.source && ai.source !== "rules" && ai.source !== "none" ? ` <span class="muted">(AI check)</span>` : ""}</p>
-    ${p.status === "pending" ? `<div class="btn-row-left"><button type="button" class="btn btn-buy btn-sm" data-approve="${p.id}">Approve</button>
+    ${p.status === "pending" ? `<div class="btn-row-left"><button type="button" class="btn ${p.route === "alpaca_live" ? "btn-danger" : "btn-buy"} btn-sm" data-approve="${p.id}" data-real="${p.route === "alpaca_live" ? 1 : ""}">${p.route === "alpaca_live" ? "Send real order" : "Approve"}</button>
       <button type="button" class="btn btn-ghost btn-sm" data-reject="${p.id}">Reject</button></div>`
       : `<p class="muted">${esc(p.status)}${p.error ? `: ${esc(p.error)}` : ""}${p.decided ? ` · ${ago(p.decided)}` : ""}</p>`}
   </article>`;
@@ -107,9 +108,9 @@ async function runNow() {
   btn.textContent = "Run now";
 }
 
-async function decide(id, approve) {
+async function decide(id, approve, confirm = false) {
   try {
-    state = await api(`/api/agent/proposals/${id}`, "POST", { approve });
+    state = await api(`/api/agent/proposals/${id}`, "POST", { approve, confirm });
     renderLists();
     learnRefresh();
   } catch (err) { alertBox(err.message); }
@@ -192,7 +193,10 @@ async function makeReport() {
 $("ag-pending").addEventListener("click", (e) => {
   const a = e.target.closest("[data-approve]");
   const r = e.target.closest("[data-reject]");
-  if (a) decide(Number(a.dataset.approve), true);
+  if (a) {
+    if (a.dataset.real && !armed(a, "Click again: send with real money")) return;
+    decide(Number(a.dataset.approve), true, Boolean(a.dataset.real));
+  }
   if (r) decide(Number(r.dataset.reject), false);
 });
 $("ag-kill").addEventListener("click", (e) => kill(e.currentTarget));

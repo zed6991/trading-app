@@ -464,7 +464,8 @@ body:not(.unlock-9) [data-unlock="9"],
 body:not(.unlock-10) [data-unlock="10"],
 body:not(.unlock-11) [data-unlock="11"],
 body:not(.unlock-12) [data-unlock="12"],
-body:not(.unlock-13) [data-unlock="13"] { display: none !important; }
+body:not(.unlock-13) [data-unlock="13"],
+body:not(.unlock-14) [data-unlock="14"] { display: none !important; }
 
 /* ---------------------------------------------------------------- navigation */
 .main-nav { display: flex; gap: 2px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); padding: 3px; }
@@ -841,7 +842,8 @@ body:not(.simple-mode) .coach-fab span { display: none; }
 
 /* ---------------------------------------------------------------- v4 pages: code, research, agent, settings */
 .page { display: none; }
-body.view-code .codelab, body.view-research .research, body.view-agent .agentpage, body.view-settings .settingspage {
+body.view-code .codelab, body.view-research .research, body.view-agent .agentpage, body.view-settings .settingspage,
+body.view-live .livepage {
   display: block; flex: 1; min-height: 0; overflow-y: auto;
 }
 body.view-code .codelab { display: block; }
@@ -925,3 +927,33 @@ body.view-code .codelab { display: block; }
 #rs-filings .lab-table td, #rs-filings .lab-table th { text-align: left; }
 #rs-filings .lab-table td:last-child { text-align: right; }
 .set-master { font-size: 16px; margin-bottom: 4px; }
+
+/* ---------------------------------------------------------------- go live (level 14) */
+.lv-route { display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-panel, var(--bg-input)); margin-bottom: 16px; }
+.lv-route p { margin: 4px 0 0; color: var(--text-dim); }
+.lv-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; flex: none; background: var(--text-dim); }
+.lv-alpaca_paper { border-color: var(--warn); }
+.lv-alpaca_paper .lv-dot { background: var(--warn); box-shadow: 0 0 0 4px var(--warn-soft); }
+.lv-alpaca_live { border-color: var(--down); background: var(--down-soft); }
+.lv-alpaca_live .lv-dot { background: var(--down); box-shadow: 0 0 0 4px var(--down-soft); animation: pulse 1.6s ease-in-out infinite; }
+.lv-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.lv-checks li { display: flex; gap: 12px; align-items: flex-start; }
+.lv-checks p { margin: 2px 0 0; }
+.lv-tick { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); flex: none; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.lv-checks li.ok .lv-tick { background: var(--up); border-color: var(--up); color: #04120c; }
+.lv-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.lv-opt { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-input); color: var(--text); cursor: pointer; }
+.lv-opt span { color: var(--text-dim); font-size: 13px; }
+.lv-opt:hover:not(:disabled) { border-color: var(--accent); }
+.lv-opt.on { border-color: var(--accent); background: var(--accent-soft); }
+.lv-opt.danger.on { border-color: var(--down); background: var(--down-soft); }
+.lv-opt:disabled { opacity: 0.5; cursor: not-allowed; }
+.lv-live-form { display: grid; gap: 10px; margin-top: 14px; padding: 14px; border: 1px solid var(--down); border-radius: var(--radius); max-width: 520px; }
+.lv-live-form p { margin: 0; color: var(--text-dim); }
+.lv-live-form label { display: grid; gap: 6px; }
+.lv-real { background: var(--down); color: #fff; border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+@media (max-width: 600px) { .lv-options { grid-template-columns: 1fr; } }
+.lv-ev .lv-ev-row td { border-bottom: 0; padding-bottom: 2px; }
+.lv-ev .lv-why td { padding-top: 0; font-size: 13px; }
+.lv-pass { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; margin-right: 8px; font-size: 11px; background: var(--down-soft); color: var(--down); }
+.lv-pass.ok { background: var(--up-soft); color: var(--up); }

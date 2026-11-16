@@ -332,6 +332,21 @@ GLOSSARY: list[dict[str, Any]] = [
        "Your safety net still applies to every automatic trade.", ["auto trading", "auto", "auto mode"]),
     _g("ai-filter", "AI filter", 13, "Auto-trading only takes a buy signal if the AI analyst also likes it.",
        "A second opinion, not a guarantee."),
+    _g("broker", "Broker", 14, "The company that holds your real money and sends your orders to the market.",
+       "This app connects to Alpaca, a US broker with an API. Your money sits with the broker, never with the app."),
+    _g("api-key", "API key", 14, "A password that lets a program use your broker account.",
+       "Keep it in the .env file on your computer. Anyone with your keys can trade your account, so never share them.",
+       aliases=["API keys"]),
+    _g("forward-test", "Forward test", 14, "Running a strategy on new prices as they happen, with no way to peek.",
+       "The only test on data your strategy has truly never seen. Backtests can be tuned to the past; the future can't."),
+    _g("capital-cap", "Cap", 14, "The most real money the app may have in the market at once.",
+       "Start with an amount you could lose without it hurting, like $1,000. Raise it only after months of evidence."),
+    _g("fx-cost", "Currency cost", 14, "What you pay to swap Australian dollars into US dollars and back.",
+       "Often 0.3-1% each way. On a $1,000 account that's $3-$10 per trip, which can eat a small edge.",
+       aliases=["FX cost", "currency costs"]),
+    _g("capital-gains-tax", "Capital gains tax", 14, "Tax on the profit when you sell something for more than you paid.",
+       "Profits from trading are taxable and losses can usually offset gains. Keep records of every trade.",
+       aliases=["CGT"]),
 ]
 GLOSSARY_BY_SLUG = {g["slug"]: g for g in GLOSSARY}
 
@@ -1640,6 +1655,95 @@ LEVELS: list[dict[str, Any]] = [
                 "After 28 days, press 'Generate report' on Agent → Capstone.", "capstone_report"),
             _ch("agent-schedule", "Put the agent on a schedule", "Switch the agent on so it runs by itself (approve mode is fine).",
                 "agent_on", bonus=True),
+        ],
+    },
+    {
+        "n": 14, "title": "Real money, safely", "phase": "Going live",
+        "summary": "What changes with real money, how to start small, and a checklist that only opens the door when the evidence is there.",
+        "unlocks": ["Go live: readiness checklist and evidence check", "Alpaca paper trading (real orders, pretend money)",
+                    "Real money with a cap, approval on every order and the kill switch"],
+        "lessons": [
+            {
+                "id": "l14-real", "title": "What changes with real money", "minutes": 4,
+                "cards": [
+                    _card("Most people lose",
+                          "Studies of retail day traders find most lose money after [[costs]], and only a tiny share beat "
+                          "[[buy-and-hold|buying and holding]] an index fund for years. Finishing a course doesn't change "
+                          "those odds by itself. Evidence does, and so does staying small until you have it."),
+                    _card("New costs",
+                          "Real fills have [[slippage]]. Your money is in Australian dollars, so you pay a "
+                          "[[fx-cost|currency cost]] to buy US shares: on $1,000, 0.5% each way is $10 a round trip. Profits "
+                          "are taxable ([[capital-gains-tax|capital gains tax]]), and non-US residents fill in a W-8BEN "
+                          "form for US dividends."),
+                    _card("New feelings",
+                          "Losing $50 of real money feels very different from losing $5,000 of pretend money. That's when "
+                          "people skip their stop-loss or chase losses ([[revenge-trading]]). Your written "
+                          "[[trading-plan|trading plan]] exists for exactly this moment."),
+                ],
+                "takeaway": "Real money adds costs and emotions the paper account never showed you.",
+                "quiz": [
+                    _q("You swap A$1,000 into US dollars and back at 0.5% each way. Roughly what does that cost?",
+                       ["About $10", "Nothing", "About $100"], 0, "0.5% of $1,000 is $5, twice."),
+                    _q("Your first real trade drops 3% and you want to remove the stop-loss. What does your plan say?",
+                       ["Keep the stop: you set it when you were calm", "Remove it: it will come back",
+                        "Buy more to average down"], 0, "Rules made in advance protect you from in-the-moment feelings."),
+                ],
+            },
+            {
+                "id": "l14-steps", "title": "Three gates before real money", "minutes": 4,
+                "cards": [
+                    _card("Gate 1: evidence",
+                          "The agent's strategy, with its exact settings, must beat buying and holding after costs in the "
+                          "last 30% of history and beat 95% of random traders. Only assets that pass can trade. Most "
+                          "strategies fail this, and that's useful to know before it costs you."),
+                    _card("Gate 2: paper at a real broker",
+                          "Your [[broker]] is Alpaca. Its paper account takes real orders with pretend money. Run there for "
+                          "20 days: a [[forward-test|forward test]] on prices your strategy has never seen. You also find "
+                          "the boring problems: rejected orders, whole shares only, the market being closed."),
+                    _card("Gate 3: a small cap",
+                          "Real money starts with a [[capital-cap|cap]], like $1,000, and you approve every order. "
+                          "Your [[api-key|API keys]] stay in a file on your computer and never reach the browser. The "
+                          "[[kill-switch|kill switch]] cancels the app's orders and sells only what the app bought."),
+                ],
+                "takeaway": "Evidence, then a forward test at the broker, then a small cap you approve order by order.",
+                "quiz": [
+                    _q("Why run on Alpaca paper before real money if the backtest passed?",
+                       ["It's a forward test on prices the strategy never saw", "Alpaca requires it", "It makes more profit"],
+                       0, "Backtests can be tuned to the past without you noticing."),
+                    _q("Who should see your API keys?", ["Nobody: they can trade your account", "The coach",
+                                                         "Anyone helping you code"], 0,
+                       "Keys are passwords to your money."),
+                ],
+            },
+            {
+                "id": "l14-stop", "title": "When to stop", "minutes": 3,
+                "cards": [
+                    _card("Decide now, not later",
+                          "Write down when you'll stop: for example, \"if I'm down $150 (15% of my cap), or behind SPY "
+                          "after 3 months, I go back to paper\". A [[drawdown]] limit set in advance is easy to keep. "
+                          "One made up mid-loss isn't."),
+                    _card("Keep comparing",
+                          "Every month, compare your real results with SPY, the [[benchmark]]. If an index fund would have "
+                          "done better, that's the honest answer, and it's a fine one: most professionals don't beat it either."),
+                ],
+                "takeaway": "Pick your stop rule before you start and keep measuring against the benchmark.",
+                "quiz": [
+                    _q("After 3 months you're 4% behind SPY. A sensible move:", ["Follow your plan: back to paper or pause",
+                                                                                 "Double the cap to catch up",
+                                                                                 "Stop comparing with SPY"], 0,
+                       "Trying to win it back with more money is how small losses become big ones."),
+                    _q("When is the best time to write your stop rule?", ["Before the first real trade",
+                                                                         "After the first big loss", "Never: just feel it out"],
+                       0, "A rule made while calm is one you can actually keep."),
+                ],
+            },
+        ],
+        "challenges": [
+            _ch("live-evidence", "Run the evidence check", "On Go live, press 'Check my strategy'.", "live_evidence"),
+            _ch("broker-paper-on", "Connect Alpaca paper trading",
+                "Add your Alpaca paper keys to .env, then switch Go live to Alpaca paper.", "broker_paper_on"),
+            _ch("broker-paper-fills", "Get 3 orders filled on Alpaca paper",
+                "Approve agent proposals while on Alpaca paper until 3 orders have filled.", "broker_paper_fill", 3),
         ],
     },
 ]

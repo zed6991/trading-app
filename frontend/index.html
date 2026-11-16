@@ -18,6 +18,7 @@
   <script type="module" src="research.js?v=4"></script>
   <script type="module" src="agent.js?v=4"></script>
   <script type="module" src="settings.js?v=4"></script>
+  <script type="module" src="live.js?v=4"></script>
   <script type="module" src="learn.js?v=4"></script>
   <script type="module" src="coach.js?v=4"></script>
 </head>
@@ -37,6 +38,7 @@
       <button type="button" data-view="code" data-unlock="8">Code</button>
       <button type="button" data-view="research" data-unlock="12">Research</button>
       <button type="button" data-view="agent" data-unlock="13">Agent</button>
+      <button type="button" data-view="live" data-unlock="14">Go live</button>
       <button type="button" data-view="glossary">Glossary</button>
     </nav>
     <button type="button" class="level-pill" id="level-pill" title="Your level">Level 1</button>
@@ -238,7 +240,7 @@
       <header class="lab-head"><h1>Agent</h1>
         <p>Research → signal → risk check → proposal. Rules set the size; the risk check (rules, plus the AI if it's on) can only flag concerns; you approve.</p></header>
       <div class="lab-box ag-kill-box">
-        <div><b>Kill switch</b><p class="muted">Stops the agent, turns off auto-trading, cancels proposals and waiting orders.</p>
+        <div><b>Kill switch</b><p class="muted">Stops the agent, turns off auto-trading, cancels proposals and waiting orders, including the app's orders at Alpaca.</p>
           <label class="switch-row"><input type="checkbox" id="ag-sell"> Also sell the agent's positions</label></div>
         <button type="button" class="btn btn-danger" id="ag-kill">Kill switch</button>
         <p class="muted" id="ag-killmsg"></p>
@@ -250,6 +252,19 @@
         <div class="lab-box"><h3>Run log</h3><div id="ag-log"></div></div>
       </div>
       <div class="lab-box" id="capstone"><h3>Capstone: 4 weeks against SPY</h3><div id="cap-body"></div></div>
+    </div>
+  </main>
+
+  <main class="livepage page" id="live">
+    <div class="lab-inner">
+      <header class="lab-head"><h1>Go live</h1>
+        <p>Three gates between you and real money: evidence, a forward test at a real <span class="term" data-term="broker">broker</span>, then a small <span class="term" data-term="capital-cap">cap</span>. Most strategies don't pass, and that's the point.</p></header>
+      <div class="lv-route" id="lv-route"></div>
+      <div class="lab-box"><h3>Your checklist</h3><div id="lv-checks"></div></div>
+      <div class="lab-box"><h3>Evidence check</h3><div id="lv-evidence"></div></div>
+      <div class="lab-box" id="lv-broker-box"><h3>Broker account</h3><div id="lv-broker"></div></div>
+      <div class="lab-box"><h3>Switch where the agent's orders go</h3><div id="lv-switch"></div></div>
+      <div class="lab-box"><h3>Orders the app sent</h3><div id="lv-orders"></div></div>
     </div>
   </main>
 

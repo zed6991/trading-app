@@ -20,6 +20,7 @@ from app.config import settings
 from app.engine import TradingEngine
 from app.agent import _daily_equity
 from app.learn import GLOSSARY
+from app.live import LiveError
 from app.llm import LLMError
 from app.stocks import market_status
 from app.strategies import STRATEGIES, list_strategies
@@ -61,6 +62,11 @@ async def _key_error(_: Request, exc: KeyError):
 
 @app.exception_handler(ValueError)
 async def _value_error(_: Request, exc: ValueError):
+    return _bad_request(exc)
+
+
+@app.exception_handler(LiveError)
+async def _live_error(_: Request, exc: LiveError):
     return _bad_request(exc)
 
 
@@ -275,6 +281,13 @@ class AgentUpdate(BaseModel):
 
 class Decision(BaseModel):
     approve: bool
+    confirm: bool = False  # required for real-money (alpaca_live) orders
+
+
+class RouteRequest(BaseModel):
+    route: Literal["sim", "alpaca_paper", "alpaca_live"]
+    cap_usd: float | None = Field(default=None, gt=0)
+    confirm: str = Field(default="", max_length=100)
 
 
 class KillRequest(BaseModel):
@@ -863,13 +876,43 @@ async def agent_run():
 
 @app.post("/api/agent/proposals/{proposal_id}")
 async def agent_decide(proposal_id: int, body: Decision):
-    await engine.agent.decide(proposal_id, body.approve)
+    await engine.agent.decide(proposal_id, body.approve, confirmed=body.confirm)
     return engine.agent.state()
 
 
 @app.post("/api/agent/kill")
 async def agent_kill(body: KillRequest):
     return await engine.agent.kill(body.sell_positions)
+
+
+# ---------------------------------------------------------------------- go live (Level 14)
+def _need_level_14() -> None:
+    if engine.learn.level() < 14:
+        raise ValueError("Going live is Level 14.")
+
+
+@app.get("/api/live")
+async def live_status():
+    return await engine.live.status()
+
+
+@app.post("/api/live/evidence")
+async def live_evidence():
+    _need_level_14()
+    await engine.live.check_evidence()
+    return await engine.live.status()
+
+
+@app.put("/api/live/route")
+async def live_route(body: RouteRequest):
+    _need_level_14()
+    return await engine.live.set_route(body.route, body.cap_usd, body.confirm)
+
+
+@app.post("/api/live/sync")
+async def live_sync():
+    await engine.live.sync()
+    return await engine.live.status()
 
 
 @app.get("/api/capstone")

@@ -73,6 +73,8 @@ class Agent:
         if partial.get("mode") in ("approve", "auto"):
             if partial["mode"] == "auto" and self.engine.learn.level() < 13:
                 raise ValueError("Auto mode unlocks at Level 13.")
+            if partial["mode"] == "auto" and self.engine.live.route == "alpaca_live":
+                raise ValueError("With real money, every order needs your approval: auto mode stays off.")
             cfg["mode"] = partial["mode"]
         if partial.get("interval_min") is not None:
             cfg["interval_min"] = int(min(max(int(partial["interval_min"]), 15), 1440))
@@ -109,7 +111,7 @@ class Agent:
                 "runs": self.runs()[-10:][::-1], "running": self._running, "next_run": nxt,
                 "strategies": [{"type": "builtin", "name": n} for n in STRATEGIES]
                 + [{"type": "custom", "name": n} for n in self.engine.custom_strategies()],
-                "ai_route": self.engine.llm.route("agent")}
+                "ai_route": self.engine.llm.route("agent"), "route": self.engine.live.route}
 
     # ---------------------------------------------------------------- one run
     async def _signal(self, symbol: str, candles: list[dict]) -> tuple[int | None, str]:
@@ -180,18 +182,40 @@ class Agent:
         steps, new = [], []
         try:
             eng = self.engine
-            acct = eng.account()
-            equity = acct["equity"]
+            route = eng.live.route
             limits = eng.broker.limits
+            if route == "sim":
+                acct = eng.account()
+                held_syms = set(eng.broker.positions)
+                acct = {"equity": acct["equity"], "cash": acct["cash"], "halted": acct["halted"],
+                        "n_positions": len(eng.broker.positions), "halt_reason": "trading is paused by the daily loss limit"}
+                eligible = None
+            else:
+                sz = await eng.live.sizing()
+                held_syms = set(sz["positions"])
+                acct = {"equity": sz["equity"], "cash": sz["cash"], "halted": bool(sz["halted"]),
+                        "n_positions": len(sz["positions"]), "halt_reason": "; ".join(sz["halted"])}
+                eligible = set(eng.live.eligible())
+            equity = acct["equity"]
             pending_syms = {p["symbol"] for p in self.proposals() if p["status"] == "pending"}
             for symbol in cfg["watchlist"]:
                 step = {"symbol": symbol, "name": assets.name(symbol)}
+                if eligible is not None and (assets.is_crypto(symbol) or symbol not in eligible):
+                    step["decision"] = ("skipped: crypto doesn't go through the broker" if assets.is_crypto(symbol)
+                                        else "skipped: hasn't passed the evidence check, so it can't trade on the broker")
+                    steps.append(step)
+                    continue
                 try:
                     candles = await prices.cached_history(symbol, "1d", assets.periods_per_year(symbol) * 2 + 1)
                     price = eng.prices().get(symbol) or candles[-1]["close"]
                     state, why = await self._signal(symbol, candles)
                     step["signal"] = why
-                    owned = eng.broker.positions.get(symbol)
+                    if route == "sim":
+                        owned = eng.broker.positions.get(symbol)
+                        agent_owned = bool(owned) and owned.strategy == "agent"
+                    else:
+                        owned = symbol in held_syms
+                        agent_owned = owned
                     news = None
                     if cfg["use_research"]:
                         try:
@@ -210,7 +234,7 @@ class Agent:
                     side = None
                     if state == 1 and not owned:
                         side = "buy"
-                    elif state == 0 and owned and owned.strategy == "agent":
+                    elif state == 0 and agent_owned:
                         side = "sell"
                     if side is None:
                         step["decision"] = "no trade" + (" (already holding)" if owned and state == 1 else "")
@@ -230,8 +254,8 @@ class Agent:
                         notional = min(notional, cap, acct["cash"] * 0.99)
                         problems = []
                         if acct["halted"]:
-                            problems.append("trading is paused by the daily loss limit")
-                        if len(acct["positions"]) + sum(1 for p in new if p["side"] == "buy") >= limits.max_open_positions:
+                            problems.append(acct["halt_reason"])
+                        if acct["n_positions"] + sum(1 for p in new if p["side"] == "buy") >= limits.max_open_positions:
                             problems.append(f"already at the {limits.max_open_positions}-position limit")
                         if notional < 50:
                             problems.append("not enough cash")
@@ -247,9 +271,17 @@ class Agent:
                             steps.append(step)
                             continue
                     else:
-                        proposal.update({"qty": owned.qty, "notional": round(owned.qty * price, 2)})
+                        qty = owned.qty if route == "sim" else eng.live.app_qty(symbol)
+                        proposal.update({"qty": qty, "notional": round(qty * price, 2)})
+                    proposal["route"] = route
+                    if route != "sim":
+                        proposal["reasons"].append(
+                            "This goes to Alpaca " + ("with REAL money" if route == "alpaca_live" else "paper trading")
+                            + ": whole shares only, and a stop-loss order is placed once the buy fills.")
                     if not eng.market_open_for(symbol):
-                        proposal["reasons"].append("The US market is closed: approving fills at the last price (practice).")
+                        proposal["reasons"].append(
+                            "The US market is closed: approving fills at the last price (practice)." if route == "sim" else
+                            "The US market is closed: the order waits for the next open, at whatever price that is.")
                     facts = {"symbol": symbol, "side": side, "signal": why, "news_average": news and news.get("average"),
                              "headlines": step.get("news", {}).get("headlines"), "daily_volatility_pct": round(vol_d * 100, 2),
                              "market_open": eng.market_open_for(symbol), "size_usd": proposal["notional"],
@@ -275,7 +307,7 @@ class Agent:
             self.db.set_kv("agent_runs", runs[-MAX_LOG:])
             self.engine.learn.record("agent_run")
             await eng.log("info", f"Agent run: {len(new)} proposal(s) from {len(steps)} assets")
-            if cfg["mode"] == "auto":
+            if cfg["mode"] == "auto" and route != "alpaca_live":
                 for p in new:
                     if not p["flagged"]:
                         await self.decide(p["id"], True, auto=True)
@@ -283,7 +315,7 @@ class Agent:
         finally:
             self._running = False
 
-    async def decide(self, proposal_id: int, approve: bool, auto: bool = False) -> dict:
+    async def decide(self, proposal_id: int, approve: bool, auto: bool = False, confirmed: bool = False) -> dict:
         items = self.proposals()
         p = next((x for x in items if x["id"] == int(proposal_id)), None)
         if p is None:
@@ -297,8 +329,29 @@ class Agent:
             self.engine.learn.record("agent_reject")
             return p
         eng = self.engine
+        route = p.get("route", "sim")
+        if route != eng.live.route:
+            raise ValueError("The broker route changed since this proposal was made. Reject it and run the agent again.")
+        if route == "alpaca_live" and (auto or not confirmed):
+            raise ValueError("Real money: confirm this order before it's sent.")
         p["status"] = "executing"  # claim it first, so a double click can't execute it twice
         self._save_proposals(items)
+        if route != "sim":
+            from app.live import LiveError
+
+            try:
+                row = await eng.live.place(p, confirmed=confirmed)
+            except LiveError as exc:
+                p["status"] = "failed"
+                p["error"] = str(exc)
+            else:
+                p["status"] = "auto-executed" if auto else "sent"
+                p["broker_order"] = row["id"]
+                if not auto:
+                    self.engine.learn.record("agent_approve")
+            p["decided"] = _now()
+            self._save_proposals(items)
+            return p
         try:
             async with eng.lock:
                 price = eng.prices().get(p["symbol"]) or p["price"]
@@ -341,10 +394,11 @@ class Agent:
             for sym, pos in list(eng.broker.positions.items()):
                 if pos.strategy == "agent":
                     sold.append(await eng.close_position(sym))
+        broker = await eng.live.kill(sell_positions)
         self.engine.learn.record("kill_switch")
         await eng.log("warning", "KILL SWITCH: agent stopped, proposals and orders cancelled"
                       + (f", {len(sold)} agent positions sold" if sold else ""))
-        return {**self.state(), "sold": len(sold)}
+        return {**self.state(), "sold": len(sold), "broker": broker}
 
     async def loop(self) -> None:
         """Background scheduler: run when enabled and due."""

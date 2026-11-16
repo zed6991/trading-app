@@ -11,7 +11,7 @@ gives suggestions and coaches you.
 
 ## The course
 
-The app opens on **Learn**. Each level unlocks the part of the app it teaches. All 13 levels are built.
+The app opens on **Learn**. Each level unlocks the part of the app it teaches. All 14 levels are built.
 
 | Level | Topic | Unlocks |
 |---|---|---|
@@ -48,6 +48,15 @@ happened and the lesson in it. Experienced users can "Unlock everything" at the 
   the trade (risk % of equity ÷ a stop 2 daily standard deviations away, capped by the safety net) → LLM may flag a
   concern → proposal. Approve mode by default; auto mode only at Level 13. Kill switch cancels everything and can sell
   the agent's positions. Every run is logged. **Capstone:** write a plan, run 28 days, get a report vs SPY.
+- **Go live (14):** a checklist between you and real money. (1) The course is really finished, the capstone report is
+  final, and the agent's strategy passes the evidence check: with its exact settings it beats buy & hold after costs in
+  the last 30% of history and beats 95% of random traders; only symbols that pass can trade. (2) 20 days and 3 filled
+  orders on **Alpaca paper** (a forward test at a real broker). (3) **Real money** with a cap you set (default $1,000,
+  max $25,000), a typed confirmation, and a confirm on every order (auto mode is off). Whole shares of US stocks and
+  ETFs only; a stop-loss order is placed after each fill; buys pause when the account is down 2% on the day; the kill
+  switch cancels the app's orders and sells only shares the app bought. Put `ALPACA_PAPER_KEY_ID` /
+  `ALPACA_PAPER_SECRET_KEY` (and later the `ALPACA_LIVE_*` keys) in `.env`. Check that Alpaca accepts accounts from
+  your country. Nothing here is financial advice and no setting makes a profit likely.
 - **AI is optional and off by default.** With AI off (Settings → Use AI), nothing contacts Ollama or OpenRouter, and
   every feature works on rules: Practice suggestions and the Charts analyst use indicator rules, trade explanations and
   the coach are rule-based, Research reads filings with a pattern-based reader (exact sentences with the headline

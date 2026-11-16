@@ -2,9 +2,9 @@
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 8000;
 const VIEW_KEY = "view";
-const VIEWS = ["learn", "practice", "dashboard", "lab", "code", "research", "agent", "settings", "glossary"];
+const VIEWS = ["learn", "practice", "dashboard", "lab", "code", "research", "agent", "live", "settings", "glossary"];
 const VIEW_LEVEL = { dashboard: 3, lab: 4, code: 8, research: 12, agent: 13 };
-const TOP_LEVEL = 13; // levels 8-13 are on the roadmap
+const TOP_LEVEL = 14;
 // Where each challenge's event happens, so "Go" can take the learner straight there. Lab events also pick the tab.
 const EVENT_VIEW = {
   manual_buy: "practice", manual_sell: "practice", buy_stock: "practice", buy_crypto: "practice",
