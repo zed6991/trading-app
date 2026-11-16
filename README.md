@@ -11,7 +11,7 @@ gives suggestions and coaches you.
 
 ## The course
 
-The app opens on **Learn**. Each level unlocks the part of the app it teaches. All 14 levels are built.
+The app opens on **Learn**. Each level unlocks the part of the app it teaches. All 15 levels are built.
 
 | Level | Topic | Unlocks |
 |---|---|---|
@@ -28,6 +28,8 @@ The app opens on **Learn**. Each level unlocks the part of the app it teaches. A
 | 11 | Machine-learning signals: features and labels, time splits, leakage, accuracy vs baseline vs profit | Lab → ML (logistic regression, gradient boosting, shuffle and leak traps) |
 | 12 | LLMs as research analysts: SEC filings, structured extraction, hallucination checks, training-data leakage | Research: filings with verified numbers, news sentiment, "does the AI remember?", event studies |
 | 13 | Agents and the capstone: pipelines, human in the loop, kill switch, audit log | Agent (research → signal → risk → AI check → proposal), auto mode, 4-week capstone vs SPY |
+| 14 | Your swing trading desk: setups, trade plans in R, buy-stops, ATR stops, time stops, expectancy, gaps and earnings, portfolio heat, the evening routine | Swing desk: scanner, plans, Time Machine, risk gate, orders, journal and edge review |
+| 15 | Real money, safely: costs, taxes, a forward test at a real broker, a cap, when to stop | Go live: evidence check, Alpaca paper, then real money behind gates |
 
 Each level has 2-4 short lessons with quizzes (choices are shuffled; the answer stays on the server) and practice
 challenges that tick off automatically when you do them in the app. Every trading word is tappable for a
@@ -48,9 +50,28 @@ happened and the lesson in it. Experienced users can "Unlock everything" at the 
   the trade (risk % of equity ÷ a stop 2 daily standard deviations away, capped by the safety net) → LLM may flag a
   concern → proposal. Approve mode by default; auto mode only at Level 13. Kill switch cancels everything and can sell
   the agent's positions. Every run is logged. **Capstone:** write a plan, run 28 days, get a report vs SPY.
-- **Go live (14):** a checklist between you and real money. (1) The course is really finished, the capstone report is
-  final, and the agent's strategy passes the evidence check: with its exact settings it beats buy & hold after costs in
-  the last 30% of history and beats 95% of random traders; only symbols that pass can trade. (2) 20 days and 3 filled
+- **Swing desk (14):** a complete swing trading setup for someone with a day job. *Today*: the evening routine (market
+  trend from SPY vs its 200-day, review open trades, scan, plan or decide not to trade, journal) with the next US
+  session in your local time. *Scan*: about 170 large US stocks and ETFs (`app/universe.py`, add more with
+  `SWING_EXTRA_SYMBOLS`) on daily bars for five setups: pullback in an uptrend, 20-day breakout on volume, bull flag,
+  oversold bounce in an uptrend, reclaim of the 20-day average. *Plans*: a thesis, a buy-stop entry above the last
+  high, a stop under the 5-day low (at least 1 ATR away), a target in R, a time stop, and shares sized from your
+  risk per trade; an earnings estimate from SEC filings. *Time Machine*: 10,000 replays from the stock's own last 500
+  days (seed 19) with odds of target / stop / gap / time stop, a fan chart and a break-even-aware verdict, plus the
+  setup's real record on that stock against random days with the same exits. *Risk gate*: PASS or BLOCK on max loss,
+  reward:risk, total open risk, positions, sector, duplicates, cash, trades per day, liquidity, chasing, earnings, plus
+  warnings for the market trend and correlation; the PASS is fingerprinted to the exact plan and today. *Orders*: on
+  the paper account they're handled on daily bars (and live prices while the market is open); at Alpaca as a
+  stop-limit buy, then a one-cancels-other stop and target; stops can only be raised. *Journal*: review every closed
+  trade (note, plan followed, mistake tags); expectancy, win rate and R curve by setup, a resampling luck check,
+  followed-vs-broke-plan, a weekly review and the track record Go live needs. The scan-plan-replay-risk-broker
+  pipeline adapts ideas from the MIT-licensed [day-trader-skill](https://github.com/jakeschincariol/day-trader-skill)
+  for swing trading.
+- **Go live (15):** a checklist between you and real money. (1) Levels 1-14 are really finished, the capstone report
+  is final, and there's evidence: the agent's strategy passes the evidence check (with its exact settings it beats buy
+  & hold after costs in the last 30% of history and beats 95% of random traders; only symbols that pass can trade), or
+  a swing setup has a paper track record (20 closed trades, positive expectancy, the luck check, the plan followed;
+  only setups that pass can trade real money). (2) 20 days and 3 filled
   orders on **Alpaca paper** (a forward test at a real broker). (3) **Real money** with a cap you set (default $1,000,
   max $25,000), a typed confirmation, and a confirm on every order (auto mode is off). Whole shares of US stocks and
   ETFs only; a stop-loss order is placed after each fill; buys pause when the account is down 2% on the day; the kill

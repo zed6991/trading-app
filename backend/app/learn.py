@@ -279,7 +279,8 @@ def rule_explanation(f: dict) -> dict:
     strat = (f.get("strategy") or "your").replace("_", " ")
     if f["side"] == "buy":
         how = {"manual": "by hand", "limit": "with a limit order", "rebalance": "to build your portfolio",
-               "agent": "after you approved the agent's proposal"}.get(
+               "agent": "after you approved the agent's proposal",
+               "swing": "when the price reached your swing plan's buy-stop"}.get(
             reason, f"automatically, because the {strat} strategy gave a buy signal")
         return {
             "headline": f"You bought {_money(f['value'])} of {coin}",
@@ -323,6 +324,11 @@ def rule_explanation(f: dict) -> dict:
         why = "The price rose to your take-profit target, so it sold automatically and locked in the gain."
         lesson, lid = ("Taking profit at a planned level stops a winning trade from turning into a losing one while "
                        "you're not watching."), "l2-stops"
+    elif reason == "time_stop":
+        why = ("Your swing plan's time stop: the trade reached neither the stop nor the target in the days you gave it, "
+               "so it sold at the close.")
+        lesson, lid = ("A trade that goes nowhere ties up money and attention. Judge the setup by its average R over "
+                       "many trades, not by this one."), "l14-plan"
     elif reason == "signal":
         why = f"The {strat} strategy gave a sell signal, so auto-trading sold."
         lesson, lid = ("One trade says little about a strategy. Judge it over many trades, like a backtest does."

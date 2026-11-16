@@ -1,8 +1,8 @@
 """Course content: "Zero to AI-powered quant trader".
 
-All 13 levels are built: markets, risk, charts, statistics, correlation, edge-or-luck, proper backtesting, Python,
-strategies in code, portfolios and factors, machine learning, LLM research, and agents with a capstone. ROADMAP holds
-any future levels (shown as "coming soon").
+All 15 levels are built: markets, risk, charts, statistics, correlation, edge-or-luck, proper backtesting, Python,
+strategies in code, portfolios and factors, machine learning, LLM research, agents with a capstone, the swing trading
+desk, and real money behind gates. ROADMAP holds any future levels (shown as "coming soon").
 
 Text fields may contain glossary links written as [[slug]] or [[slug|shown text]]. Every term a lesson or the UI uses
 must be in GLOSSARY, with `level` = the level whose lessons teach it.
@@ -13,7 +13,8 @@ COURSE_TITLE = "Zero to AI-powered quant trader"
 COURSE_OUTLINE = ("1 markets and orders, 2 risk and position sizing, 3 charts and classic signals, "
                   "4 returns and volatility, 5 correlation, beta and diversification, 6 edge or luck, "
                   "7 testing strategies properly, 8 Python for quants, 9 strategies in code, 10 portfolios and factors, "
-                  "11 machine-learning signals, 12 LLMs as research analysts, 13 agents and the capstone")
+                  "11 machine-learning signals, 12 LLMs as research analysts, 13 agents and the capstone, "
+                  "14 the swing trading desk, 15 real money, safely")
 
 
 def _g(slug: str, term: str, level: int, short: str, more: str = "", aliases: list[str] | None = None) -> dict:
@@ -332,19 +333,60 @@ GLOSSARY: list[dict[str, Any]] = [
        "Your safety net still applies to every automatic trade.", ["auto trading", "auto", "auto mode"]),
     _g("ai-filter", "AI filter", 13, "Auto-trading only takes a buy signal if the AI analyst also likes it.",
        "A second opinion, not a guarantee."),
-    _g("broker", "Broker", 14, "The company that holds your real money and sends your orders to the market.",
+    # Level 14: the swing trading desk
+    _g("swing-trade", "Swing trade", 14, "A trade held for a few days to a few weeks, planned on daily charts.",
+       "You plan in the evening and let orders work while you're busy. It fits a day job, unlike day trading.",
+       ["swing trading", "swing trades"]),
+    _g("setup", "Setup", 14, "A written rule that picks out charts worth a closer look, like a pullback or a breakout.",
+       "A setup firing means the chart matched the rule. It isn't a prediction and it isn't a buy.",
+       ["setups"]),
+    _g("scanner", "Scanner", 14, "A tool that runs your setup rules over many stocks and lists the ones that match.",
+       "It saves you flipping through 170 charts by hand. It never decides for you.", ["scan"]),
+    _g("pullback", "Pullback", 14, "A short dip inside an uptrend, often back to a moving average.",
+       "Buying a pullback means buying a rising stock on a quiet day instead of after a big jump."),
+    _g("breakout", "Breakout", 14, "When the price closes above a level it couldn't get past before, like a 20-day high.",
+       "Big volume on the breakout day suggests real buying, not a fluke. Many breakouts still fail.", ["breakouts"]),
+    _g("bull-flag", "Bull flag", 14, "A sharp rise followed by a few quiet days in a tight range.",
+       "The idea: buyers are resting, not leaving. It fails often, so it still needs a stop."),
+    _g("market-regime", "Market trend", 14, "Whether the whole market is in an uptrend, a downtrend or mixed.",
+       "Measured here with SPY against its 200-day average. Most stocks move with the market.",
+       ["market regime", "market's trend"]),
+    _g("buy-stop", "Buy-stop", 14, "An order to buy only if the price rises to your level.",
+       "Entry above today's high means the stock has to prove itself first. If it never gets there, nothing happens.",
+       ["buy stop", "stop entry"]),
+    _g("time-stop", "Time stop", 14, "Selling after a set number of days if neither the stop nor the target was hit.",
+       "A trade that goes nowhere ties up money and attention. The time stop ends it on schedule.",
+       ["time stops"]),
+    _g("r-multiple", "R-multiple", 14, "A trade's result measured in units of what you risked (R).",
+       "Risk $5 a share: selling $10 higher is +2R, hitting the stop is -1R. It lets you compare any two trades.",
+       ["R", "R-multiples"]),
+    _g("atr", "ATR", 14, "Average True Range: how far a stock usually moves in a day.",
+       "A stop closer than about one ATR tends to get hit by ordinary daily wiggle.", ["average true range"]),
+    _g("expectancy", "Expectancy", 14, "The average result per trade in R, wins and losses together.",
+       "Win 40% at +2R, lose 60% at -1R: 0.4 x 2 - 0.6 x 1 = +0.2R a trade. Above zero means it makes money on average.",
+       ["expected value"]),
+    _g("portfolio-heat", "Portfolio heat", 14, "All the money you'd lose if every open trade hit its stop at once.",
+       "Five trades risking 0.5% each is 2.5% heat. Keep it small: in a sell-off, stops get hit together.",
+       ["heat"]),
+    _g("sector", "Sector", 14, "A group of companies in the same business, like technology or energy.",
+       "Stocks in one sector tend to rise and fall together, so five chip stocks are almost one big bet.",
+       ["sectors"]),
+    _g("trading-journal", "Trading journal", 14, "A record of every trade: the plan, what happened, and what you learned.",
+       "Reviewed by setup, it shows which trades really make money and which habits cost you.",
+       ["journal"]),
+    _g("broker", "Broker", 15, "The company that holds your real money and sends your orders to the market.",
        "This app connects to Alpaca, a US broker with an API. Your money sits with the broker, never with the app."),
-    _g("api-key", "API key", 14, "A password that lets a program use your broker account.",
+    _g("api-key", "API key", 15, "A password that lets a program use your broker account.",
        "Keep it in the .env file on your computer. Anyone with your keys can trade your account, so never share them.",
        aliases=["API keys"]),
-    _g("forward-test", "Forward test", 14, "Running a strategy on new prices as they happen, with no way to peek.",
+    _g("forward-test", "Forward test", 15, "Running a strategy on new prices as they happen, with no way to peek.",
        "The only test on data your strategy has truly never seen. Backtests can be tuned to the past; the future can't."),
-    _g("capital-cap", "Cap", 14, "The most real money the app may have in the market at once.",
+    _g("capital-cap", "Cap", 15, "The most real money the app may have in the market at once.",
        "Start with an amount you could lose without it hurting, like $1,000. Raise it only after months of evidence."),
-    _g("fx-cost", "Currency cost", 14, "What you pay to swap Australian dollars into US dollars and back.",
+    _g("fx-cost", "Currency cost", 15, "What you pay to swap Australian dollars into US dollars and back.",
        "Often 0.3-1% each way. On a $1,000 account that's $3-$10 per trip, which can eat a small edge.",
        aliases=["FX cost", "currency costs"]),
-    _g("capital-gains-tax", "Capital gains tax", 14, "Tax on the profit when you sell something for more than you paid.",
+    _g("capital-gains-tax", "Capital gains tax", 15, "Tax on the profit when you sell something for more than you paid.",
        "Profits from trading are taxable and losses can usually offset gains. Keep records of every trade.",
        aliases=["CGT"]),
 ]
@@ -1658,7 +1700,168 @@ LEVELS: list[dict[str, Any]] = [
         ],
     },
     {
-        "n": 14, "title": "Real money, safely", "phase": "Going live",
+        "n": 14, "title": "Your swing trading desk", "phase": "Going live",
+        "summary": "A complete swing trading routine: scan, plan in R, replay the odds, pass a risk check, approve, "
+                   "and journal every trade.",
+        "unlocks": ["Swing desk: evening scanner with five setups and the market's trend",
+                    "Trade plans in R with the Time Machine (10,000 replays plus the setup's real history)",
+                    "A risk gate (PASS or BLOCK), buy-stop orders with stop, target and time stop",
+                    "Trading journal with your expectancy by setup, a luck check and a weekly review"],
+        "lessons": [
+            {
+                "id": "l14-swing", "title": "Swing trading and setups", "minutes": 5,
+                "cards": [
+                    _card("Days, not minutes",
+                          "A [[swing-trade|swing trade]] lasts a few days to a few weeks. You look at daily charts once "
+                          "an evening, plan, and let orders do the work while you're at your job. From Sydney the US "
+                          "market is open in the middle of the night, so day trading US stocks would mean trading "
+                          "while you should be asleep. Swing trading fits a 9-to-5."),
+                    _card("A setup is a rule, not a tip",
+                          "A [[setup]] is a written rule that picks out charts worth a closer look: a [[pullback]] "
+                          "(a rising stock dips to its 20-day average), a [[breakout]] (it closes above its highest "
+                          "high of the last 20 days on big volume) or a [[bull-flag|bull flag]]. The [[scanner]] runs "
+                          "your rules over about 170 big US stocks each evening. A hit means \"matched a rule\", "
+                          "never \"a buy\"."),
+                    _card("Check the tide",
+                          "Most stocks move with the market ([[beta]]). The [[market-regime|market's trend]] (SPY "
+                          "above or below its 200-day average) tells you whether long setups have the tide with them. "
+                          "In a downtrend, trade smaller, fewer, or not at all."),
+                ],
+                "takeaway": "Swing trading means planning in the evening; setups only shortlist charts, you decide.",
+                "quiz": [
+                    _q("The scanner lists NVDA as a pullback. What does that mean?",
+                       ["It matched the pullback rule: now you check it and plan", "It's a buy",
+                        "It will go up this week"], 0,
+                       "A scan narrows 170 charts to a few worth a look. The decision is still yours."),
+                    _q("You work 9 to 5 in Sydney. Why does swing trading fit better than day trading US stocks?",
+                       ["You plan in the evening and the orders work while the market is open overnight",
+                        "Swing trading always makes more money", "US markets are open during Sydney office hours"], 0,
+                       "You can't watch a market that's open while you sleep, but a plan can."),
+                    _q("SPY is below its 200-day average and falling. A sensible swing trader:",
+                       ["Trades smaller and fewer long trades, or waits", "Buys more because stocks are cheap",
+                        "Ignores the market"], 0, "Long setups fight the tide when most stocks are falling."),
+                ],
+            },
+            {
+                "id": "l14-plan", "title": "The trade plan in R", "minutes": 5,
+                "cards": [
+                    _card("Decide the exit before the entry",
+                          "Before you buy, write down four numbers: the entry, the [[stop-loss|stop]], the target and "
+                          "the [[time-stop|time stop]]. Plus one sentence: why this trade, and what would prove you "
+                          "wrong. It's a [[trading-plan|trading plan]] for one trade, written while you're calm."),
+                    _card("Enter with a buy-stop",
+                          "A [[buy-stop]] buys only if the price rises to your level, say $101 when it's $100 now. "
+                          "The stock has to prove itself by trading higher. If it never gets there within 3 days, the "
+                          "order expires and you've lost nothing."),
+                    _card("Measure in R",
+                          "R is your risk per share. Entry $101, stop $96: 1R = $5. A target at $111 is 2R. A trade's "
+                          "result in R is its [[r-multiple|R-multiple]]: sold at $106 is +1R, stopped at $96 is -1R. "
+                          "Size it with Level 2's rule: risk $500 / $5 = 100 shares. Every trade then risks the same, "
+                          "whatever the stock costs."),
+                    _card("Give it room: the ATR",
+                          "The [[atr|ATR]] is how far a stock moves on a normal day. A stop closer than about one ATR "
+                          "gets hit by ordinary wiggle. Put it under the recent low, at least one ATR away, and buy "
+                          "fewer shares instead."),
+                ],
+                "takeaway": "Entry, stop, target and time stop first; measure everything in R; size from the stop.",
+                "quiz": [
+                    _q("Entry $50, stop $48, target $56. What's the target in R?", ["3R", "2R", "6R"], 0,
+                       "Risk is $2 a share and the target is $6 away: 6 / 2 = 3."),
+                    _q("You risk $300 a trade. Entry $80, stop $77. How many shares?", ["100", "300", "3"], 0,
+                       "$300 / $3 a share = 100 shares."),
+                    _q("The stock moves about $4 on a normal day (its ATR). Your stop is $1 away. What's likely?",
+                       ["Normal wiggle stops you out", "Less risk, so it's better", "Nothing: the ATR doesn't matter"],
+                       0, "Give the trade room and buy fewer shares instead."),
+                ],
+            },
+            {
+                "id": "l14-expect", "title": "Expectancy: does it pay over many trades?", "minutes": 5,
+                "cards": [
+                    _card("Win rate isn't enough",
+                          "[[expectancy|Expectancy]] is the average R per trade: (win rate x average win) - (loss rate "
+                          "x average loss). Win 40% at +2R and lose 60% at -1R: 0.4 x 2 - 0.6 x 1 = +0.2R a trade. "
+                          "Risking $500 a trade, that's $100 a trade on average, over many trades."),
+                    _card("Break-even depends on the target",
+                          "With a 2R target you break even winning 1 trade in 3 (1 / (1 + 2)). With a 1R target you "
+                          "need half. A bigger target wins less often, and that's fine if the maths still works. "
+                          "That's why a [[win-rate|win rate]] alone tells you little."),
+                    _card("The Time Machine",
+                          "The app replays your plan 10,000 times using the stock's own days from the last two years, "
+                          "shuffled: how often the stop, the target or the time stop comes first, and how bad it gets. "
+                          "Then it runs your setup on every past day it fired and compares that with random days using "
+                          "the same stop and target: the [[baseline]] from Level 6."),
+                    _card("Your journal is the real test",
+                          "Replays and history are about the past. Your [[trading-journal|trading journal]] records "
+                          "what really happened to your trades, in R, by setup. Below about 20 trades a setup, luck "
+                          "swings the numbers a lot ([[sample-size|sample size]])."),
+                ],
+                "takeaway": "Expectancy, not win rate, decides if a setup pays; compare it with random days.",
+                "quiz": [
+                    _q("You win 50% of trades at +1.5R and lose 50% at -1R. What's the expectancy?",
+                       ["+0.25R", "+0.5R", "-0.25R"], 0, "0.5 x 1.5 - 0.5 x 1 = 0.25R a trade."),
+                    _q("Your target is 3R. What win rate breaks even?", ["25%", "33%", "50%"], 0, "1 / (1 + 3) = 25%."),
+                    _q("Your setup's history beat only 40% of groups of random-day trades. What does that suggest?",
+                       ["It may be luck, not an edge", "It's a strong setup", "Random days don't matter"], 0,
+                       "If random days with the same exits do as well, the setup isn't adding anything."),
+                ],
+            },
+            {
+                "id": "l14-overnight", "title": "Overnight risk and your routine", "minutes": 5,
+                "cards": [
+                    _card("Gaps jump over stops",
+                          "Holding overnight means the price can open far from yesterday's close (a [[gap]]). If it "
+                          "opens below your stop, the stop sells at the open, so a planned -1R can become -2R. "
+                          "[[earnings|Earnings]] reports cause the biggest gaps, so the risk check blocks plans likely "
+                          "to hold through one."),
+                    _card("Total heat",
+                          "[[portfolio-heat|Portfolio heat]] is all your open risk added up. Five trades risking 0.5% "
+                          "each is 2.5% of the account if they all stop out together, and in a sell-off they do. The "
+                          "desk's limits: 3% heat, 5 trades, and 2 per [[sector]], because stocks in a sector fall "
+                          "together."),
+                    _card("The evening routine",
+                          "1) Check the market's trend. 2) Review open trades; raise a stop if your plan says so, never "
+                          "lower one. 3) Run the scan. 4) Plan one trade, or decide not to. 5) Journal every closed "
+                          "trade. About 20 minutes, then the orders work while you sleep."),
+                ],
+                "takeaway": "Gaps and earnings beat stops, so keep total risk small and follow the same routine each night.",
+                "quiz": [
+                    _q("Your stop is $95. After bad news overnight the stock opens at $90. Where does the stop sell?",
+                       ["Around $90, the open", "$95 exactly", "It doesn't sell"], 0,
+                       "A stop becomes a market order once it's hit, and a gap skips your price."),
+                    _q("Four open trades each risk $500 on a $100,000 account. What's your heat?",
+                       ["2% ($2,000)", "0.5% ($500)", "8% ($8,000)"], 0, "$2,000 of $100,000 is 2%."),
+                    _q("A trade is going your way. Which stop change fits the rules?",
+                       ["Raise it to protect some of the gain", "Lower it to give the trade more room",
+                        "Remove it"], 0, "Stops only move up. Moving one down risks more than you planned."),
+                ],
+            },
+        ],
+        "challenges": [
+            _ch("swing-scan", "Run the evening scan", "On Swing desk, press 'Run the scan'.", "swing_scan"),
+            _ch("swing-plan", "Write a trade plan with a thesis",
+                "Pick a scan hit, write why you'd take it and what would prove you wrong, and save the plan.",
+                "swing_plan"),
+            _ch("swing-replay", "Run the Time Machine on a plan", "Open a plan and press 'Run the Time Machine'.",
+                "swing_replay"),
+            _ch("swing-pass", "Get a plan through the risk check",
+                "Press 'Risk check' on a plan. If it's blocked, fix what it says and check again.", "swing_pass"),
+            _ch("swing-approve", "Approve your first swing order",
+                "Approve a plan that passed today. A buy-stop then waits for your entry price.", "swing_approve"),
+            _ch("swing-routine", "Do the full evening routine on 3 different days",
+                "On Swing desk → Today, finish all five steps before a US session, on three days.", "swing_routine", 3,
+                distinct=True),
+            _ch("swing-review", "Journal 3 closed trades",
+                "When trades close (stop, target or time stop), review each one in the Journal.", "swing_review", 3,
+                distinct=True),
+            _ch("swing-weekly", "Write a weekly review", "On Swing desk → Journal, press 'Weekly review'.",
+                "swing_weekly", bonus=True),
+            _ch("swing-record", "Build a 20-trade track record", "Journal 20 closed paper trades. Real money needs a "
+                "setup with 20 trades, a positive average and the plan followed.", "swing_review", 20, distinct=True,
+                bonus=True),
+        ],
+    },
+    {
+        "n": 15, "title": "Real money, safely", "phase": "Going live",
         "summary": "What changes with real money, how to start small, and a checklist that only opens the door when the evidence is there.",
         "unlocks": ["Go live: readiness checklist and evidence check", "Alpaca paper trading (real orders, pretend money)",
                     "Real money with a cap, approval on every order and the kill switch"],
@@ -1693,9 +1896,10 @@ LEVELS: list[dict[str, Any]] = [
                 "id": "l14-steps", "title": "Three gates before real money", "minutes": 4,
                 "cards": [
                     _card("Gate 1: evidence",
-                          "The agent's strategy, with its exact settings, must beat buying and holding after costs in the "
-                          "last 30% of history and beat 95% of random traders. Only assets that pass can trade. Most "
-                          "strategies fail this, and that's useful to know before it costs you."),
+                          "Either the agent's strategy, with its exact settings, beats buying and holding after costs in "
+                          "the last 30% of history and beats 95% of random traders, or a swing [[setup]] has a paper "
+                          "record: 20 closed trades, a positive [[expectancy]], the luck check and the plan followed. "
+                          "Only what passes can trade. Most fail, and that's useful to know before it costs you."),
                     _card("Gate 2: paper at a real broker",
                           "Your [[broker]] is Alpaca. Its paper account takes real orders with pretend money. Run there for "
                           "20 days: a [[forward-test|forward test]] on prices your strategy has never seen. You also find "

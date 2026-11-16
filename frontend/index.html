@@ -19,6 +19,7 @@
   <script type="module" src="agent.js?v=4"></script>
   <script type="module" src="settings.js?v=4"></script>
   <script type="module" src="live.js?v=4"></script>
+  <script type="module" src="swing.js?v=4"></script>
   <script type="module" src="learn.js?v=4"></script>
   <script type="module" src="coach.js?v=4"></script>
 </head>
@@ -38,7 +39,8 @@
       <button type="button" data-view="code" data-unlock="8">Code</button>
       <button type="button" data-view="research" data-unlock="12">Research</button>
       <button type="button" data-view="agent" data-unlock="13">Agent</button>
-      <button type="button" data-view="live" data-unlock="14">Go live</button>
+      <button type="button" data-view="swing" data-unlock="14">Swing desk</button>
+      <button type="button" data-view="live" data-unlock="15">Go live</button>
       <button type="button" data-view="glossary">Glossary</button>
     </nav>
     <button type="button" class="level-pill" id="level-pill" title="Your level">Level 1</button>
@@ -255,6 +257,30 @@
     </div>
   </main>
 
+  <main class="swingpage page" id="swing">
+    <div class="lab-inner">
+      <header class="lab-head"><h1>Swing desk</h1>
+        <p>Your evening routine: check the market, scan, plan in <span class="term" data-term="r-multiple">R</span>, replay the odds, pass the risk check, approve. The orders work while you sleep; the journal shows what really works.</p></header>
+      <div class="lv-route" id="sw-route"></div>
+      <div class="lab-cards" id="sw-cards"></div>
+      <p class="lab-msg" id="sw-alert" hidden></p>
+      <div class="seg sw-tabs" id="sw-tabs" role="tablist">
+        <button type="button" data-tab="today">Today</button>
+        <button type="button" data-tab="scan">Scan</button>
+        <button type="button" data-tab="plans" id="sw-tab-plans">Plans</button>
+        <button type="button" data-tab="trades" id="sw-tab-trades">Trades</button>
+        <button type="button" data-tab="journal">Journal</button>
+        <button type="button" data-tab="settings">Rules</button>
+      </div>
+      <section class="sw-pane" data-pane="today" id="sw-today"></section>
+      <section class="sw-pane" data-pane="scan" id="sw-scan" hidden></section>
+      <section class="sw-pane" data-pane="plans" id="sw-plans" hidden></section>
+      <section class="sw-pane" data-pane="trades" id="sw-trades" hidden></section>
+      <section class="sw-pane" data-pane="journal" id="sw-journal" hidden></section>
+      <section class="sw-pane lab-box" data-pane="settings" id="sw-settings" hidden></section>
+    </div>
+  </main>
+
   <main class="livepage page" id="live">
     <div class="lab-inner">
       <header class="lab-head"><h1>Go live</h1>
@@ -263,7 +289,7 @@
       <div class="lab-box"><h3>Your checklist</h3><div id="lv-checks"></div></div>
       <div class="lab-box"><h3>Evidence check</h3><div id="lv-evidence"></div></div>
       <div class="lab-box" id="lv-broker-box"><h3>Broker account</h3><div id="lv-broker"></div></div>
-      <div class="lab-box"><h3>Switch where the agent's orders go</h3><div id="lv-switch"></div></div>
+      <div class="lab-box"><h3>Switch where the agent's and the swing desk's orders go</h3><div id="lv-switch"></div></div>
       <div class="lab-box"><h3>Orders the app sent</h3><div id="lv-orders"></div></div>
     </div>
   </main>

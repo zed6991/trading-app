@@ -253,8 +253,8 @@ def test_advice_gives_one_plain_action(client, monkeypatch):
 
 def test_learning_api(client):
     s = client.get("/api/learn").json()
-    assert s["level"] == 1 and len(s["levels"]) == 14 and s["levels"][1]["status"] == "locked"
-    assert s["roadmap"] == [] and s["total_levels"] == 14
+    assert s["level"] == 1 and len(s["levels"]) == 15 and s["levels"][1]["status"] == "locked"
+    assert s["roadmap"] == [] and s["total_levels"] == 15
     lesson = client.get("/api/learn/lessons/l1-markets").json()
     assert lesson["cards"] and "answer" not in lesson["quiz"][0]
     q = LESSONS["l1-markets"]["quiz"][0]

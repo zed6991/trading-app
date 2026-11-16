@@ -1,4 +1,4 @@
-"""Level 14 go-live: gates, routing to a fake Alpaca, whole shares, stop-loss after fill, caps, staleness, kill switch."""
+"""Level 15 go-live: gates, routing to a fake Alpaca, whole shares, stop-loss after fill, caps, staleness, kill switch."""
 import asyncio
 import json
 import time
@@ -68,7 +68,7 @@ def _setup(tmp_path, monkeypatch, fake=None, ready=True):
     monkeypatch.setattr(eng.agent, "_signal", always_in)
     if ready:
         monkeypatch.setattr(eng.learn, "level_complete", lambda lvl: True)
-        monkeypatch.setattr(eng.learn, "level", lambda: 14)
+        monkeypatch.setattr(eng.learn, "level", lambda: 15)
         eng.db.set_kv("capstone", {"started_at": 0, "start_equity": 1, "spy_start": 1, "plan": "x", "report": {"final": True}})
         d = eng.live.data()
         d["evidence"] = {"ts": time.time(), "strategy": eng.live._strategy_key(), "symbols": {}, "eligible": ["SPY"]}

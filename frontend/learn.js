@@ -2,9 +2,9 @@
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 8000;
 const VIEW_KEY = "view";
-const VIEWS = ["learn", "practice", "dashboard", "lab", "code", "research", "agent", "live", "settings", "glossary"];
-const VIEW_LEVEL = { dashboard: 3, lab: 4, code: 8, research: 12, agent: 13 };
-const TOP_LEVEL = 14;
+const VIEWS = ["learn", "practice", "dashboard", "lab", "code", "research", "agent", "swing", "live", "settings", "glossary"];
+const VIEW_LEVEL = { dashboard: 3, lab: 4, code: 8, research: 12, agent: 13, swing: 14, live: 15 };
+const TOP_LEVEL = 15;
 // Where each challenge's event happens, so "Go" can take the learner straight there. Lab events also pick the tab.
 const EVENT_VIEW = {
   manual_buy: "practice", manual_sell: "practice", buy_stock: "practice", buy_crypto: "practice",
@@ -23,6 +23,9 @@ const EVENT_VIEW = {
   research_filing: "research", research_news: "research", research_memory: "research", research_study: "research",
   agent_run: "agent", agent_approve: "agent", kill_switch: "agent", capstone_start: "agent", capstone_report: "agent",
   agent_on: "agent",
+  swing_scan: "swing", swing_plan: "swing", swing_replay: "swing", swing_pass: "swing", swing_approve: "swing",
+  swing_routine: "swing", swing_review: "swing", swing_weekly: "swing",
+  live_evidence: "live", broker_paper_on: "live", broker_paper_fill: "live",
 };
 
 let course = null; // GET /api/learn

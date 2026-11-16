@@ -1,4 +1,4 @@
-// Go live (Level 14): readiness checklist, evidence check, Alpaca paper, then real money with a cap.
+// Go live (Level 15): readiness checklist, evidence check, Alpaca paper, then real money with a cap.
 import { $, api, esc, num, pct, money, tone, learnRefresh, term, armed, onView } from "./ui.js";
 
 let st = null;

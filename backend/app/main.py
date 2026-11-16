@@ -294,6 +294,47 @@ class KillRequest(BaseModel):
     sell_positions: bool = False
 
 
+class SwingPlanRequest(BaseModel):
+    symbol: str = Field(min_length=1, max_length=12)
+    setup: str = Field(max_length=40)
+    thesis: str = Field(max_length=500)
+    entry: float | None = Field(default=None, gt=0)
+    stop: float | None = Field(default=None, gt=0)
+    target: float | None = Field(default=None, gt=0)
+    r_target: float | None = Field(default=None, ge=1, le=5)
+    stop_rule: Literal["swing", "atr"] = "swing"
+    valid_days: int | None = Field(default=None, ge=1, le=10)
+    time_stop_days: int | None = Field(default=None, ge=2, le=40)
+
+
+class SwingEditRequest(BaseModel):
+    entry: float | None = Field(default=None, gt=0)
+    stop: float | None = Field(default=None, gt=0)
+    target: float | None = Field(default=None, gt=0)
+    qty: int | None = Field(default=None, ge=0)
+    thesis: str | None = Field(default=None, max_length=500)
+    valid_days: int | None = Field(default=None, ge=1, le=10)
+    time_stop_days: int | None = Field(default=None, ge=2, le=40)
+
+
+class SwingApprove(BaseModel):
+    confirm: bool = False  # required for real money
+
+
+class SwingStop(BaseModel):
+    stop: float = Field(gt=0)
+
+
+class SwingReview(BaseModel):
+    note: str = Field(max_length=1000)
+    followed_plan: bool
+    mistakes: list[str] = Field(default_factory=list, max_length=8)
+
+
+class SwingTick(BaseModel):
+    item: Literal["market", "review", "no_trade"]
+
+
 class CapstoneStart(BaseModel):
     plan: str = Field(max_length=4000)
 
@@ -885,10 +926,106 @@ async def agent_kill(body: KillRequest):
     return await engine.agent.kill(body.sell_positions)
 
 
-# ---------------------------------------------------------------------- go live (Level 14)
+# ---------------------------------------------------------------------- swing desk (Level 14)
 def _need_level_14() -> None:
     if engine.learn.level() < 14:
-        raise ValueError("Going live is Level 14.")
+        raise ValueError("The swing trading desk is Level 14.")
+
+
+@app.get("/api/swing")
+async def swing_state():
+    return await engine.swing.state()
+
+
+@app.post("/api/swing/scan")
+async def swing_scan():
+    _need_level_14()
+    return await engine.swing.scan()
+
+
+@app.put("/api/swing/settings")
+async def swing_settings(body: dict[str, Any]):
+    _need_level_14()
+    return engine.swing.update_settings(body)
+
+
+@app.post("/api/swing/plans")
+async def swing_new_plan(body: SwingPlanRequest):
+    _need_level_14()
+    return await engine.swing.new_plan(body.symbol, body.setup, body.thesis, body.entry, body.stop, body.target,
+                                       body.r_target, body.stop_rule, body.valid_days, body.time_stop_days)
+
+
+@app.put("/api/swing/plans/{tid}")
+async def swing_edit_plan(tid: int, body: SwingEditRequest):
+    _need_level_14()
+    return await engine.swing.edit_plan(tid, body.model_dump())
+
+
+@app.post("/api/swing/plans/{tid}/replay")
+async def swing_replay(tid: int):
+    _need_level_14()
+    return await engine.swing.replay(tid)
+
+
+@app.post("/api/swing/plans/{tid}/check")
+async def swing_check(tid: int):
+    _need_level_14()
+    return await engine.swing.check(tid)
+
+
+@app.post("/api/swing/plans/{tid}/approve")
+async def swing_approve(tid: int, body: SwingApprove):
+    _need_level_14()
+    return await engine.swing.approve(tid, body.confirm)
+
+
+@app.post("/api/swing/plans/{tid}/cancel")
+async def swing_cancel(tid: int):
+    return await engine.swing.cancel(tid)
+
+
+@app.post("/api/swing/plans/{tid}/close")
+async def swing_close(tid: int):
+    return await engine.swing.close_now(tid)
+
+
+@app.post("/api/swing/plans/{tid}/stop")
+async def swing_raise_stop(tid: int, body: SwingStop):
+    return await engine.swing.raise_stop(tid, body.stop)
+
+
+@app.post("/api/swing/plans/{tid}/review")
+async def swing_review(tid: int, body: SwingReview):
+    return engine.swing.review(tid, body.note, body.followed_plan, body.mistakes)
+
+
+@app.post("/api/swing/update")
+async def swing_update():
+    return await engine.swing.update(force=True)
+
+
+@app.get("/api/swing/journal")
+async def swing_journal():
+    return engine.swing.journal()
+
+
+@app.post("/api/swing/weekly")
+async def swing_weekly():
+    _need_level_14()
+    return engine.swing.weekly()
+
+
+@app.post("/api/swing/routine")
+async def swing_routine(body: SwingTick):
+    _need_level_14()
+    return engine.swing.tick_routine(body.item)
+
+
+# ---------------------------------------------------------------------- go live (Level 15)
+def _need_level_15() -> None:
+    if engine.learn.level() < 15:
+        raise ValueError("Going live is Level 15.")
 
 
 @app.get("/api/live")
@@ -898,14 +1035,14 @@ async def live_status():
 
 @app.post("/api/live/evidence")
 async def live_evidence():
-    _need_level_14()
+    _need_level_15()
     await engine.live.check_evidence()
     return await engine.live.status()
 
 
 @app.put("/api/live/route")
 async def live_route(body: RouteRequest):
-    _need_level_14()
+    _need_level_15()
     return await engine.live.set_route(body.route, body.cap_usd, body.confirm)
 
 

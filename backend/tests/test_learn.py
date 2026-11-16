@@ -96,7 +96,9 @@ def test_challenges_reachable():
              "custom_oos_beat", "portfolio_compare", "factor_run", "portfolio_apply", "kelly_run", "vol_target",
              "ml_train", "ml_shuffle", "ml_leak", "ml_beat_hold", "research_filing", "research_news",
              "research_memory", "research_study", "agent_run", "agent_approve", "kill_switch", "capstone_start",
-             "capstone_report", "agent_on", "live_evidence", "broker_paper_on", "broker_paper_fill"} | CLIENT_EVENTS
+             "capstone_report", "agent_on", "live_evidence", "broker_paper_on", "broker_paper_fill",
+             "swing_scan", "swing_plan", "swing_replay", "swing_pass", "swing_approve", "swing_routine",
+             "swing_review", "swing_weekly"} | CLIENT_EVENTS
     ids = set()
     for lvl in LEVELS:
         assert any(not c["bonus"] for c in lvl["challenges"])

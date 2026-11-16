@@ -8,14 +8,15 @@ matching topic is taught.
 
 ## The course (content in `backend/app/curriculum.py`, progress in `backend/app/learn.py`)
 
-All 14 levels are built: 1 how markets work → 2 risk first → 3 charts and classic signals → 4 returns and volatility →
+All 15 levels are built: 1 how markets work → 2 risk first → 3 charts and classic signals → 4 returns and volatility →
 5 how assets move together → 6 edge or luck? → 7 testing strategies properly → 8 Python for quants → 9 your strategy
 in code → 10 portfolios and factors → 11 machine-learning signals → 12 LLMs as research analysts → 13 agents and the
-capstone → 14 real money, safely (Go live, `app/live.py`, `frontend/live.js`). `ROADMAP` is for future levels (shown as "coming soon").
+capstone → 14 the swing trading desk (`app/swing.py`, `app/swingmath.py`, `app/universe.py`, `frontend/swing.js`) →
+15 real money, safely (Go live, `app/live.py`, `frontend/live.js`). `ROADMAP` is for future levels (shown as "coming soon").
 
 A level is complete when every lesson quiz is answered correctly and every non-bonus challenge is done; that unlocks
 the next level. Level N's features are usable while on level N (frontend: `data-unlock="N"`, hidden until
-`body.unlock-N`, gating CSS covers 2-14). Quiz choices are shuffled per question by `choice_order` and answers are
+`body.unlock-N`, gating CSS covers 2-15). Quiz choices are shuffled per question by `choice_order` and answers are
 checked on the server. "Unlock everything" exists for experienced users.
 
 Assets live in `backend/app/assets.py` (names, kind stock/etf/crypto, fees). Stocks come from Yahoo Finance
@@ -45,10 +46,18 @@ toggling indicators, using the order ticket) go through `POST /api/learn/events`
 - **Protect the user by default.** Conservative risk limits, auto-trading hidden until level 13 and opted in, no
   implied guaranteed profit. This is paper trading. The agent proposes and the learner approves (auto mode is
   opt-in at level 13); rules set trade sizes, the LLM may only flag concerns. Keep the kill switch working.
+- **The swing desk decides nothing for the learner (`app/swing.py`).** A scan hit "matched a rule", never "a buy".
+  Every plan needs a thesis, an entry, a stop, a target and a time stop before it can be sized; results are in R.
+  Nothing is sent without a risk-gate PASS today for that exact plan (fingerprint) and the learner's approval; exits
+  are never blocked; stops only move up. The Time Machine (`swingmath.time_machine`) uses a fixed seed and must say
+  what it can't know; the setup history is compared with random days using the same exits. Paper orders are handled
+  on daily bars (gaps fill at the open, a day touching both sides counts as the stop). Ideas adapted from the
+  MIT-licensed github.com/jakeschincariol/day-trader-skill.
 - **Real money only behind the gates (`app/live.py`).** The agent's approved proposals go to the app's paper account
-  (`sim`) unless the learner switches the route to Alpaca paper or live. Live needs: course really finished (not
-  unlock-all), final capstone report, the evidence check passing (exact strategy settings beat buy & hold after costs
-  in the last 30% of history and 95% of random traders; only passing symbols trade), 20 days and 3 fills on Alpaca
+  (`sim`) unless the learner switches the route to Alpaca paper or live. Live needs: course (1-14) really finished (not
+  unlock-all), final capstone report, evidence (the agent's exact strategy settings beat buy & hold after costs in the
+  last 30% of history and 95% of random traders, only passing symbols trade; or a swing setup with 20 closed paper
+  trades, positive expectancy, an 80% luck check and the plan followed 90%, only passing setups trade live), 20 days and 3 fills on Alpaca
   paper, live keys, a cap, and a typed confirmation. Live: approve every order with a confirm (never auto), whole
   shares, US stocks/ETFs only, a GTC stop-loss after each fill, buys paused at -2% on the day, stale/drifted proposals
   refused, and the kill switch cancels the app's orders and sells only shares the app bought. Keys stay in `.env`;

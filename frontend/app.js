@@ -2060,6 +2060,11 @@ function handleMessage(msg) {
     case "engine": applyEngine(data); break;
     case "risk": applyRisk(data); break;
     case "status": applyStatus(data); break;
+    case "swing": window.dispatchEvent(new Event("swing:changed")); break;
+    case "swing_alert":
+      toast(String(data?.text ?? ""), "info", "Swing desk");
+      window.dispatchEvent(new Event("swing:changed"));
+      break;
     case "pong": break;
     default: break;
   }

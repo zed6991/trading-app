@@ -1,14 +1,17 @@
-"""Go live (Level 14): route the agent's approved proposals to a real broker (Alpaca), behind three gates.
+"""Go live (Level 15): route the agent's approved proposals and the swing desk's approved plans to a real broker
+(Alpaca), behind three gates.
 
 Routes:
-  sim           the app's own paper account (default; everything before Level 14 uses this)
+  sim           the app's own paper account (default; everything before Level 15 uses this)
   alpaca_paper  Alpaca's paper-trading API: real order handling, pretend money
   alpaca_live   Alpaca with real money
 
 Gates (checked by rules on the server, never by the AI):
   1. Ready:   the course is really finished (unlocking everything doesn't count), the 28-day capstone report exists,
-              and the agent's strategy passes the evidence check on at least one stock or ETF. Only symbols that
-              pass may be traded through the broker.
+              and there is evidence: the agent's strategy passes the evidence check on at least one stock or ETF
+              (only symbols that pass may be traded by the agent), or a swing setup has a paper track record
+              (swing.TRACK_TRADES closed trades, positive average R, the luck check, the plan followed; only setups
+              that pass may trade real money).
   2. Paper:   at least PAPER_DAYS days and PAPER_FILLS filled orders through Alpaca paper, the only truly unseen test.
   3. Live:    a typed confirmation and a dollar cap. Every live order needs a human approval (auto mode is off),
               whole shares only, US stocks and ETFs only, a stop-loss after every buy, buys blocked after the daily
@@ -33,6 +36,8 @@ from app import assets, prices
 logger = logging.getLogger("app.live")
 
 ROUTES = ("sim", "alpaca_paper", "alpaca_live")
+LAST_COURSE_LEVEL = 14  # levels that must really be finished before the broker (this module is level 15)
+SWING_LIMIT_PAD = 0.005  # a swing buy-stop is a stop-limit: it won't chase a gap more than 0.5% past the entry
 PAPER_DAYS = 20
 PAPER_FILLS = 3
 LUCK_BAR = 95.0  # % of random traders the strategy must beat
@@ -91,6 +96,9 @@ class Alpaca:
 
     async def asset(self, symbol: str) -> dict:
         return await self._req("GET", f"/v2/assets/{symbol}")
+
+    async def replace(self, order_id: str, body: dict) -> dict:
+        return await self._req("PATCH", f"/v2/orders/{order_id}", json=body)
 
     async def order(self, order_id: str) -> dict:
         return await self._req("GET", f"/v2/orders/{order_id}")
@@ -240,18 +248,21 @@ class GoLive:
         ev = d["evidence"]
         ev_fresh = bool(ev) and ev["strategy"] == self._strategy_key()
         paper_days = (_now() - d["paper_first_fill"]) / 86400 if d["paper_first_fill"] else 0.0
+        swing = getattr(self.engine, "swing", None)
+        swing_ok = [s for s, r in (swing.track_record() if swing else {}).items() if r["eligible"]]
         checks = [
-            {"id": "course", "title": "Finish levels 1-13",
+            {"id": "course", "title": f"Finish levels 1-{LAST_COURSE_LEVEL}",
              "ok": all(learn.level_complete(lvl) for lvl in _course_levels()),
              "detail": "Every lesson and challenge, done for real. 'Unlock everything' doesn't count here."},
             {"id": "capstone", "title": "Finish the 4-week capstone",
              "ok": bool(report.get("final")),
              "detail": "Run your written plan for 28 days and generate the final report."},
-            {"id": "evidence", "title": "Pass the evidence check",
-             "ok": ev_fresh and bool(ev["eligible"]),
-             "detail": ("Stale: you changed the agent's strategy since the last check." if ev and not ev_fresh else
-                        "Beat buy & hold after costs in the last 30% of history, and beat "
-                        f"{LUCK_BAR:.0f}% of random traders. Only symbols that pass can trade.")},
+            {"id": "evidence", "title": "Pass an evidence check (the agent's strategy or a swing setup)",
+             "ok": (ev_fresh and bool(ev["eligible"])) or bool(swing_ok),
+             "detail": ("Stale: you changed the agent's strategy since the last check. " if ev and not ev_fresh else "")
+                       + "Agent: beat buy & hold after costs in the last 30% of history and beat "
+                       f"{LUCK_BAR:.0f}% of random traders. Swing desk: a setup with a paper track record "
+                       + (f"(passing: {', '.join(swing_ok)})." if swing_ok else "(none yet).")},
             {"id": "keys_paper", "title": "Connect Alpaca paper trading",
              "ok": has_keys("alpaca_paper") or self._transport is not None,
              "detail": "Free paper account at alpaca.markets; put the paper keys in .env."},
@@ -498,6 +509,119 @@ class GoLive:
                                   + (f", errors: {'; '.join(errors)[:300]}" if errors else ""))
         return {"cancelled": cancelled, "sold": sold, "errors": errors}
 
+    # ---------------------------------------------------------------- swing desk orders
+    def order_row(self, order_id: str | None) -> dict | None:
+        if not order_id:
+            return None
+        return next((o for o in self.data()["orders"] if o["id"] == order_id), None)
+
+    async def swing_entry(self, t: dict, confirmed: bool = False) -> dict:
+        """A swing plan's entry: a stop-limit buy that waits for the price to trade up to the entry (GTC; the desk
+        cancels it after the plan's valid days). The limit stops it chasing a gap far above the plan."""
+        route = self.route
+        if route == "sim":
+            raise LiveError("No broker route is on.")
+        if route == "alpaca_live" and not confirmed:
+            raise LiveError("Real money: confirm this order in the app first.")
+        sym = alpaca_symbol(t["symbol"])
+        api = self.client(route)
+        async with self._lock:
+            info = await api.asset(sym)
+            if not info.get("tradable", False):
+                raise LiveError(f"Alpaca says {sym} isn't tradable right now.")
+            s = await self.sizing()
+            if s["halted"]:
+                raise LiveError("Buys are paused: " + "; ".join(s["halted"]) + ".")
+            qty = min(int(t["qty"]), math.floor(s["cash"] / t["entry"]))
+            if qty < 1:
+                raise LiveError(f"One share of {sym} at ${t['entry']:,.2f} is more than the cash the app may use "
+                                f"(${s['cash']:,.0f}). Whole shares only: raise the cap or pick a cheaper stock.")
+            order = await api.submit({"symbol": sym, "qty": str(qty), "side": "buy", "type": "stop_limit",
+                                      "stop_price": f"{t['entry']:.2f}",
+                                      "limit_price": f"{t['entry'] * (1 + SWING_LIMIT_PAD):.2f}",
+                                      "time_in_force": "gtc", "client_order_id": f"qp-sw{t['id']}-b-{int(_now())}"})
+            d = self.data()
+            row = self._track(d, order, route=route, kind="swing_entry", proposal_id=None, est_price=t["entry"])
+            row["ticket"] = t["id"]
+            self._save(d)
+        t["qty"] = qty
+        await self.engine.log("warning" if route == "alpaca_live" else "info",
+                              f"{route}: swing buy-stop {qty} {sym} at {t['entry']:.2f} sent (order {row['id'][:8]})")
+        return row
+
+    async def swing_exits(self, t: dict) -> dict:
+        """After the entry fills: one order that is both the stop-loss and the take-profit (one cancels the other)."""
+        route = t["route"]
+        api = self.client(route)
+        async with self._lock:
+            order = await api.submit({"symbol": alpaca_symbol(t["symbol"]), "qty": str(int(t["qty"])), "side": "sell",
+                                      "type": "limit", "time_in_force": "gtc", "order_class": "oco",
+                                      "take_profit": {"limit_price": f"{t['target']:.2f}"},
+                                      "stop_loss": {"stop_price": f"{t['stop']:.2f}"},
+                                      "client_order_id": f"qp-sw{t['id']}-x-{int(_now())}"})
+            d = self.data()
+            tp = self._track(d, order, route=route, kind="swing_tp", proposal_id=None, est_price=t["target"])
+            tp["ticket"] = t["id"]
+            sl_id = None
+            for leg in order.get("legs") or []:
+                row = self._track(d, leg, route=route, kind="swing_sl", proposal_id=None, est_price=t["stop"],
+                                  stop_price=t["stop"])
+                row["ticket"] = t["id"]
+                sl_id = leg["id"]
+            self._save(d)
+        return {"tp": tp["id"], "sl": sl_id}
+
+    async def swing_cancel_entry(self, t: dict) -> None:
+        row = self.order_row(t.get("entry_order"))
+        if row and row["status"] not in FINAL:
+            await self.client(row["route"]).cancel(row["id"])
+            async with self._lock:
+                d = self.data()
+                r = next(o for o in d["orders"] if o["id"] == row["id"])
+                r["status"] = "canceled"
+                self._save(d)
+
+    async def swing_move_stop(self, t: dict, new_stop: float) -> None:
+        row = self.order_row(t.get("sl_order"))
+        if not row or row["status"] in FINAL:
+            raise LiveError("There's no live stop order for this trade at Alpaca.")
+        fresh = await self.client(row["route"]).replace(row["id"], {"stop_price": f"{new_stop:.2f}"})
+        async with self._lock:
+            d = self.data()
+            old = next(o for o in d["orders"] if o["id"] == row["id"])
+            old["status"] = "replaced"
+            new = self._track(d, fresh, route=row["route"], kind="swing_sl", proposal_id=None, est_price=new_stop,
+                              stop_price=new_stop)
+            new["ticket"] = t["id"]
+            self._save(d)
+        t["sl_order"] = fresh["id"]
+
+    async def swing_exit_now(self, t: dict) -> dict:
+        """Cancel the trade's stop and take-profit, then sell its shares at the market (time stop or by hand)."""
+        route = t["route"]
+        api = self.client(route)
+        async with self._lock:
+            d = self.data()
+            for o in d["orders"]:
+                if o.get("ticket") == t["id"] and o["kind"] in ("swing_tp", "swing_sl") and o["status"] not in FINAL:
+                    await api.cancel(o["id"])
+                    o["status"] = "canceled"
+            sym = alpaca_symbol(t["symbol"])
+            pos = {p["symbol"]: float(p["qty"]) for p in await api.positions()}
+            qty = min(float(t["qty"]), pos.get(sym, 0.0), self.app_qty(sym, route))
+            if qty <= 0:
+                self._save(d)
+                raise LiveError(f"Alpaca shows no {sym} shares bought by the app to sell.")
+            order = await api.submit({"symbol": sym, "qty": _qty(qty), "side": "sell", "type": "market",
+                                      "time_in_force": "day", "client_order_id": f"qp-sw{t['id']}-s-{int(_now())}"})
+            row = self._track(d, order, route=route, kind="swing_exit", proposal_id=None,
+                              est_price=self.engine.prices().get(t["symbol"]) or t["entry"])
+            row["ticket"] = t["id"]
+            self._save(d)
+        await self.engine.log("warning" if route == "alpaca_live" else "info",
+                              f"{route}: swing sell {qty:g} {sym} sent (order {row['id'][:8]})")
+        return row
+
     # ---------------------------------------------------------------- status for the screen
     async def status(self) -> dict:
         d = self.data()
@@ -540,7 +664,12 @@ class GoLive:
 def _course_levels() -> list[dict]:
     from app.curriculum import LEVELS
 
-    return [lvl for lvl in LEVELS if lvl["n"] <= 13]
+    return [lvl for lvl in LEVELS if lvl["n"] <= LAST_COURSE_LEVEL]
+
+
+def alpaca_symbol(symbol: str) -> str:
+    """Yahoo writes share classes with a dash (BRK-B), Alpaca with a dot (BRK.B)."""
+    return symbol.replace("-", ".")
 
 
 def _f(v) -> float | None:
